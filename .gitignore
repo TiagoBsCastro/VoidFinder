@@ -1,0 +1,58 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Packaging and virtual environments
+build/
+dist/
+*.egg-info/
+.venv/
+.conda-env/
+.conda-pkgs/
+venv/
+env/
+
+# Local configuration
+.env
+.env.*
+*.local
+
+# Notebooks and editor metadata
+.ipynb_checkpoints/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Scientific data, simulations, and generated products
+data/
+datasets/
+outputs/
+output/
+results/
+runs/
+simulations/
+checkpoints/
+*.h5
+*.hdf5
+*.fits
+*.npy
+*.npz
+*.parquet
+*.csv
+*.dat
+*.bin
+*.log
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig

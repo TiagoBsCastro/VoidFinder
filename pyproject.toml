@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "pinocchio-voids"
+version = "0.1.0"
+description = "A PINOCCHIO-based cosmic void finder."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "PINOCCHIO Voids contributors" }
+]
+dependencies = [
+  "numpy",
+  "scipy",
+  "pydantic",
+  "pyyaml",
+  "typer",
+  "rich",
+  "h5py",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+]
+
+[project.scripts]
+pinvoid = "pinocchio_voids.cli:app"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
