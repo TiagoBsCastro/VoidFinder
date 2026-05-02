@@ -17,3 +17,7 @@ columns:
 
 The current package only reads and validates this catalog layout. It does not
 run PINOCCHIO, does not find voids, and does not optimize parameters.
+
+For canonical package data objects, final positions are used as the default
+analysis positions. See `docs/scientific_conventions.md` for the unit and
+periodic-box conventions.

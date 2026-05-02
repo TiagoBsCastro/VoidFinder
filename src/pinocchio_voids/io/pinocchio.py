@@ -12,6 +12,8 @@ from pathlib import Path
 import numpy as np
 from numpy.typing import NDArray
 
+from pinocchio_voids.catalog import HaloCatalog
+
 PINOCCHIO_HALO_COLUMN_NAMES: tuple[str, ...] = (
     "group_id",
     "mass_msun_h",
@@ -82,6 +84,20 @@ class PinocchioHaloCatalog:
     def n_particles(self) -> NDArray[np.int64]:
         return self.column("n_particles").astype(np.int64)
 
+    def to_halo_catalog(
+        self,
+        *,
+        box_size_mpc_h: float | None = None,
+        wrap_positions: bool = True,
+    ) -> HaloCatalog:
+        """Convert this PINOCCHIO-specific catalog to the canonical catalog."""
+
+        return pinocchio_to_halo_catalog(
+            self,
+            box_size_mpc_h=box_size_mpc_h,
+            wrap_positions=wrap_positions,
+        )
+
 
 def read_pinocchio_halo_catalog(
     path: str | Path,
@@ -134,4 +150,35 @@ def read_pinocchio_halo_catalog(
         data=data,
         source=catalog_path,
         box_size_mpc_h=box_size_mpc_h,
+    )
+
+
+def pinocchio_to_halo_catalog(
+    catalog: PinocchioHaloCatalog,
+    *,
+    box_size_mpc_h: float | None = None,
+    wrap_positions: bool = True,
+) -> HaloCatalog:
+    """Convert a parsed PINOCCHIO halo catalog to the canonical halo catalog."""
+
+    box_size = box_size_mpc_h if box_size_mpc_h is not None else catalog.box_size_mpc_h
+    if box_size is None or box_size <= 0:
+        raise PinocchioCatalogError(
+            "A positive box_size_mpc_h is required for canonical conversion"
+        )
+
+    positions = catalog.final_positions_mpc_h.copy()
+    if wrap_positions:
+        positions %= box_size
+
+    return HaloCatalog(
+        ids=catalog.group_ids,
+        masses_msun_h=catalog.masses_msun_h,
+        positions_mpc_h=positions,
+        velocities_km_s=catalog.velocities_km_s,
+        particle_counts=catalog.n_particles,
+        box_size_mpc_h=box_size,
+        position_unit="Mpc/h",
+        mass_unit="Msun/h",
+        velocity_unit="km/s",
     )

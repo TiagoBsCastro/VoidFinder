@@ -29,6 +29,7 @@ design primitives:
 
 - validated YAML run configuration models;
 - a lightweight reader for ASCII PINOCCHIO halo catalogs;
+- canonical halo and tracer catalog data objects;
 - documentation of the expected PINOCCHIO catalog columns.
 
 Void finding, PINOCCHIO execution, and optimization remain intentionally out of

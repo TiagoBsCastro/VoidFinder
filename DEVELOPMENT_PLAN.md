@@ -5,10 +5,10 @@ stage, what has already been completed, and the next implementation tasks.
 
 ## Current Stage
 
-We are between **Milestone 1** and **Milestone 2**:
+We are ready to start **Milestone 3**:
 
 - Milestone 1 is complete.
-- Milestone 2 is in progress.
+- Milestone 2 is complete.
 - Void finding, PINOCCHIO execution, and optimization have not started.
 
 ## Milestone 1: Repository Foundation - Done
@@ -21,7 +21,7 @@ Completed:
 - Created and verified a Miniforge environment named `voidfinder`.
 - Kept scientific implementation out of the first scaffold.
 
-## Milestone 2: Data Model and I/O Design - In Progress
+## Milestone 2: Data Model and I/O Design - Done
 
 Completed:
 
@@ -31,14 +31,10 @@ Completed:
 - Added small synthetic catalog and configuration fixtures.
 - Added tests for package import, configuration loading, and PINOCCHIO catalog reading.
 - Added `pinvoid validate-config` for validating run configuration files.
-
-Remaining before Milestone 3:
-
-- Define a canonical internal catalog representation for halos and tracers.
-- Add conversion utilities from PINOCCHIO halo catalogs to that internal representation.
-- Document coordinate, unit, and periodic-box conventions in one place.
-- Add tests for shape validation, unit metadata, and periodic wrapping behavior.
-- Optionally add non-committed local checks against low-resolution PINOCCHIO outputs under `runs/`.
+- Added canonical internal halo and tracer catalog representations.
+- Added conversion utilities from PINOCCHIO halo catalogs to canonical catalogs.
+- Documented coordinate, unit, and periodic-box conventions.
+- Added tests for shape validation, unit metadata, read-only arrays, and periodic wrapping.
 
 ## Milestone 3: Void-Finder Prototype - Not Started
 
@@ -75,30 +71,19 @@ Planned:
 
 ## Next Tasks
 
-1. Commit the current Milestone 2 foundation.
-   - Include package, docs, fixtures, tests, README, and `.gitignore` updates.
-   - Keep external dependency trees and generated run products untracked.
-   - Put validation plotting utilities in a separate commit if they are kept.
+1. Start Milestone 3 with a simple synthetic-catalog void-finder prototype.
+   - Use the canonical `TracerCatalog` as input.
+   - Keep the first algorithm small, deterministic, and heavily tested.
+   - Do not add PINOCCHIO execution, VIDE comparison, or optimization.
 
-2. Finish the Milestone 2 canonical data layer.
-   - Add immutable `HaloCatalog` and/or `TracerCatalog` data objects.
-   - Store IDs, masses, positions, velocities, particle counts, box size, and unit metadata.
-   - Validate array shapes and consistent row counts.
+2. Define synthetic validation cases for Milestone 3.
+   - Uniform tracer field with no obvious central void.
+   - Controlled spherical underdensity.
+   - Periodic-boundary case.
 
-3. Add PINOCCHIO-to-canonical conversion utilities.
-   - Convert the current ASCII reader output into the canonical data representation.
-   - Use final positions as the default analysis positions.
-   - Keep conversion separate from VIDE formatting and void finding.
-
-4. Expand documentation of scientific conventions.
-   - Positions: comoving `Mpc/h`.
-   - Masses: `Msun/h`.
-   - Velocities: `km/s`.
-   - Periodic boxes: wrap final positions into `[0, box_size)`.
-
-5. Start Milestone 3 only after the above tasks pass tests.
-   - Implement the first prototype against synthetic data.
-   - Defer PINOCCHIO execution, VIDE comparison, and optimization.
+3. Keep validation tooling separate.
+   - Commit plotting and VIDE-comparison utilities separately from core science code.
+   - Keep generated files under `runs/` ignored.
 
 ## Verification Commands
 

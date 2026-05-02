@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from pinocchio_voids.catalog import HaloCatalog
 from pinocchio_voids.io import PinocchioCatalogError, read_pinocchio_halo_catalog
 
 
@@ -34,3 +35,22 @@ def test_read_pinocchio_halo_catalog_rejects_wrong_column_count(tmp_path) -> Non
 
     with pytest.raises(PinocchioCatalogError, match="12 columns"):
         read_pinocchio_halo_catalog(invalid_catalog)
+
+
+def test_pinocchio_catalog_converts_to_canonical_halo_catalog() -> None:
+    pinocchio_catalog = read_pinocchio_halo_catalog(FIXTURE)
+
+    halo_catalog = pinocchio_catalog.to_halo_catalog(box_size_mpc_h=256.0)
+
+    assert isinstance(halo_catalog, HaloCatalog)
+    assert halo_catalog.box_size_mpc_h == 256.0
+    assert halo_catalog.ids.tolist() == [101, 102, 103]
+    np.testing.assert_allclose(halo_catalog.positions_mpc_h[-1], [4.0, 255.0, 1.0])
+    np.testing.assert_allclose(halo_catalog.masses_msun_h, [1.0e13, 2.5e13, 5.0e13])
+
+
+def test_pinocchio_conversion_requires_box_size() -> None:
+    pinocchio_catalog = read_pinocchio_halo_catalog(FIXTURE)
+
+    with pytest.raises(PinocchioCatalogError, match="box_size_mpc_h"):
+        pinocchio_catalog.to_halo_catalog()
