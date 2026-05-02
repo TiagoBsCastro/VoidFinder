@@ -72,6 +72,8 @@ Completed so far:
   do not outrank viable calibration regions solely through low raw L1.
 - Added `--linking-factor` support for linking lengths expressed as a factor of
   source halo mean spacing, with separate resolved source-A/source-B lengths.
+- Added `scripts/compare_void_size_functions.py` to write per-bin finder-vs-VIDE
+  void size-function CSVs and optional plots for paired runs.
 - Added unit tests and tiny paired PINOCCHIO fixtures.
 - Verified a local ignored `n032` paired run can execute without writing
   generated outputs.
@@ -102,7 +104,8 @@ Planned:
 
 - Refine mean-spacing-factor calibration with focused grids across `n032`,
   `n064`, `n128`, and `n256`.
-- Add lightweight per-bin size-function inspection for top sweep rows.
+- Use per-bin size-function CSVs to inspect top sweep rows before adding new
+  merge scoring.
 - Use `voidDesc_all_*` outputs under `runs/vide-lowres/` as reference catalogs
   for evaluation while keeping generated run products ignored.
 - Keep pure synthetic catalogs as unit-test fixtures, not the main development
@@ -157,11 +160,10 @@ Planned:
      ranking is not driven by one diagnostic.
    - Keep broad sweeps and optimization for a later milestone.
 
-2. Add lightweight evaluation output for inspection.
-   - Export or print per-bin predicted/reference size-function counts for top
-     rows.
-   - Add a small helper for comparing top-row centers/radii against VIDE
-     summaries without committing generated run products.
+2. Inspect per-bin size-function residuals for top rows.
+   - Run `scripts/compare_void_size_functions.py` on the best focused-grid rows.
+   - Compare A and B residual patterns, not only total void counts.
+   - Keep generated CSV and plot files under ignored `runs/` paths.
 
 3. Add bridge-density scoring only after the geometry-only baseline has a
    defensible parameter region.
@@ -183,6 +185,7 @@ Planned:
 - Added unit and CLI test coverage for geometry-only parameter sweeps.
 - Added unit and CLI test coverage for guarded calibration scores and
   mean-spacing linking factors.
+- Added fixture-backed tests for finder-vs-VIDE void size-function CSV output.
 - Add ignored local integration checks using:
   - `runs/pinocchio-lowres/n032`
   - `runs/pinocchio-lowres/n032_paired`

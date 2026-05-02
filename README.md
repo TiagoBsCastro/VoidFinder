@@ -69,6 +69,21 @@ tests a source-catalog mean halo spacing factor and reports the resolved source
 A/B linking lengths in the sweep table. The table reports both raw binned count
 L1 and a guarded score that marks rows below `--min-predicted-fraction`.
 
+Write per-bin finder-vs-VIDE void size-function statistics:
+
+```bash
+python scripts/compare_void_size_functions.py \
+  runs/pinocchio-lowres/n032/pinocchio.0.0000.lowres_n032.catalog.out \
+  runs/pinocchio-lowres/n032_paired/pinocchio.0.0000.lowres_n032_paired.catalog.out \
+  runs/vide-lowres/n032/outputs/pinocchio_n032_ss1.0/sample_pinocchio_n032_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n032_ss1.0_z0.00_d00.out \
+  runs/vide-lowres/n032_paired/outputs/pinocchio_n032_paired_ss1.0/sample_pinocchio_n032_paired_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n032_paired_ss1.0_z0.00_d00.out \
+  --box-size 256 \
+  --rho-bar 8.63025e10 \
+  --linking-factor 0.15 \
+  --bins 12 \
+  --output-csv runs/void-statistics/n032_vsf.csv
+```
+
 ## Current Development Scope
 
 The package currently contains the repository scaffold plus Milestone 2 input
@@ -87,6 +102,7 @@ design primitives and the first Milestone 3 algorithm slice:
 - a local `pinvoid paired-prototype` integration command;
 - a local `pinvoid paired-sweep` geometry-only calibration scaffold;
 - guarded sweep scoring and source mean-spacing linking factors;
+- finder-vs-VIDE per-bin void size-function comparison scripts;
 - documentation of the expected PINOCCHIO catalog columns.
 
 PINOCCHIO execution, calibrated VIDE comparison, bridge-density scoring, and
