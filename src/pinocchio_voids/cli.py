@@ -7,6 +7,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from pinocchio_voids.calibration import sweep_geometry_parameters
 from pinocchio_voids.config import load_run_config
 from pinocchio_voids.evaluation import compare_void_size_functions
 from pinocchio_voids.io import read_paired_pinocchio_halo_catalogs, read_vide_void_desc
@@ -232,3 +233,105 @@ def paired_prototype(
         )
         if rows_added:
             console.print(size_table)
+
+
+@app.command("paired-sweep")
+def paired_sweep(
+    catalog_a: Path,
+    catalog_b: Path,
+    vide_a: Path,
+    vide_b: Path,
+    box_size_mpc_h: float = typer.Option(..., "--box-size", help="Periodic box size in Mpc/h."),
+    reference_rho_bar_msun_h_mpc3: float = typer.Option(
+        ...,
+        "--rho-bar",
+        help="Mean matter density used by the protovoid radius mapping.",
+    ),
+    linking_lengths_mpc_h: list[float] = typer.Option(
+        [8.0],
+        "--linking-length",
+        help="FoF linking length to test. Repeat for multiple values.",
+    ),
+    radius_a0_values: list[float] = typer.Option(
+        [1.0],
+        "--radius-a0",
+        help="Protovoid radius normalization to test. Repeat for multiple values.",
+    ),
+    radius_alpha_values: list[float] = typer.Option(
+        [1.0],
+        "--radius-alpha",
+        help="Protovoid radius slope to test. Repeat for multiple values.",
+    ),
+    adjacency_factors: list[float] = typer.Option(
+        [1.0],
+        "--adjacency-factor",
+        help="Adjacency threshold multiplier to test. Repeat for multiple values.",
+    ),
+    min_cluster_members: int = typer.Option(
+        2,
+        "--min-cluster-members",
+        help="Minimum halo count for source clusters.",
+    ),
+    min_cluster_mass_msun_h: float = typer.Option(
+        0.0,
+        "--min-cluster-mass",
+        help="Minimum source-cluster mass in Msun/h.",
+    ),
+    size_bins: int = typer.Option(
+        6,
+        "--size-bins",
+        help="Number of shared log-radius bins used for VIDE size-function scoring.",
+    ),
+    top: int = typer.Option(
+        10,
+        "--top",
+        help="Maximum number of sorted sweep rows to print.",
+    ),
+) -> None:
+    """Sweep geometry-only paired-prototype parameters against VIDE catalogs."""
+
+    paired = read_paired_pinocchio_halo_catalogs(
+        catalog_a,
+        catalog_b,
+        box_size_mpc_h=box_size_mpc_h,
+    )
+    reference_a = read_vide_void_desc(vide_a)
+    reference_b = read_vide_void_desc(vide_b)
+    results = sweep_geometry_parameters(
+        paired.catalog_a,
+        paired.catalog_b,
+        reference_a=reference_a,
+        reference_b=reference_b,
+        reference_rho_bar_msun_h_mpc3=reference_rho_bar_msun_h_mpc3,
+        linking_lengths_mpc_h=linking_lengths_mpc_h,
+        radius_a0_values=radius_a0_values,
+        radius_alpha_values=radius_alpha_values,
+        adjacency_factors=adjacency_factors,
+        min_cluster_members=min_cluster_members,
+        min_cluster_mass_msun_h=min_cluster_mass_msun_h,
+        bins=size_bins,
+    )
+
+    table = Table(title="Geometry Sweep")
+    table.add_column("Rank", justify="right")
+    table.add_column("Link", justify="right")
+    table.add_column("a0", justify="right")
+    table.add_column("alpha", justify="right")
+    table.add_column("adj", justify="right")
+    table.add_column("A Pred/VIDE", justify="right")
+    table.add_column("B Pred/VIDE", justify="right")
+    table.add_column("L1", justify="right")
+
+    for rank, result in enumerate(results[:top], start=1):
+        config = result.config
+        table.add_row(
+            str(rank),
+            f"{config.linking_length_mpc_h:g}",
+            f"{config.radius_a0:g}",
+            f"{config.radius_alpha:g}",
+            f"{config.adjacency_factor:g}",
+            f"{result.score_a.predicted_void_count}/{result.score_a.reference_void_count}",
+            f"{result.score_b.predicted_void_count}/{result.score_b.reference_void_count}",
+            str(result.total_count_l1_difference),
+        )
+    console.print(table)

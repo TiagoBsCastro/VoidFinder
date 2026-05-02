@@ -17,8 +17,9 @@ catalogs:
 - Matching VIDE reference outputs exist locally under `runs/vide-lowres/` and
   should be used as calibration and evaluation targets.
 - The initial geometry-only paired-halo void-finding prototype is implemented.
-- Calibration, bridge-density scoring, PINOCCHIO execution orchestration, and
-  optimization have not started.
+- Geometry-only calibration scaffolding has started.
+- Bridge-density scoring, PINOCCHIO execution orchestration, and optimization
+  have not started.
 
 ## Milestone 1: Repository Foundation - Done
 
@@ -64,6 +65,8 @@ Completed so far:
 - Added symmetric A-to-B and B-to-A execution.
 - Added a VIDE `voidDesc` reader and first void size-function metric.
 - Added `pinvoid paired-prototype` for local ignored paired-run checks.
+- Added `pinvoid paired-sweep` for deterministic geometry-only parameter
+  inspection against paired VIDE references.
 - Added unit tests and tiny paired PINOCCHIO fixtures.
 - Verified a local ignored `n032` paired run can execute without writing
   generated outputs.
@@ -72,6 +75,15 @@ Completed so far:
 - Initial geometry-only counts are substantially above VIDE counts on several
   low-resolution pairs, so parameter inspection and calibration should happen
   before bridge-density scoring is added.
+- A small local `n032` geometry sweep runs successfully and shows that lowering
+  the linking length from `8` to `6` reduces the raw predicted-count excess in
+  the tested parameter grid.
+- A broader `n032` sweep over `linking_length`, `radius_a0`, `radius_alpha`, and
+  `adjacency_factor` exposed a metric limitation: pure binned count L1 can favor
+  degenerate underprediction, including zero predicted voids in one direction.
+- Cross-checking low-link parameter regions showed resolution dependence:
+  `n064` count totals can be close to VIDE, while the same style of fixed-Mpc
+  linking overpredicts strongly on `n128` and `n256`.
 
 Planned:
 
@@ -96,8 +108,10 @@ Entry criteria:
 Remaining Phase 1 scope:
 
 - Inspect geometry-only output quality before adding bridge-density scoring.
-- Tune or calibrate the first geometry-only parameters against VIDE size
-  functions.
+- Add a non-degenerate geometry-only score guard before trusting ranked sweeps.
+- Inspect whether `linking_length` should be parameterized relative to source
+  halo mean spacing or another resolution-aware scale.
+- Keep calibration as small deterministic grids, not a broad optimizer.
 
 ## Milestone 4: VIDE Evaluation and Workflow Integration - Not Started
 
@@ -124,18 +138,16 @@ Planned:
 
 ## Next Tasks
 
-1. Inspect geometry-only output quality.
-   - Compare predicted void radii and counts with `runs/vide-lowres/n032` and
-     `runs/vide-lowres/n032_paired`.
-   - Use `pinvoid paired-prototype --size-bins` for a first shared-bin void
-     size-function count difference.
-   - Decide the first bridge-density score definition after geometry-only
-     behavior is visible.
+1. Fix the geometry-only sweep score so degenerate underprediction does not rank
+   as the best calibration region.
+   - Penalize or filter directions where predicted void counts fall below a
+     minimum fraction of the VIDE count.
+   - Keep reporting raw binned count L1 for transparency.
 
-2. Start calibration scaffolding only after geometry-only output is understood.
-   - Use the package-level VIDE reader and void size-function metric.
-   - Explore `linking_length`, `radius_a0`, `radius_alpha`, and
-     `adjacency_factor` before adding new score terms.
+2. Inspect resolution-aware clustering parameters.
+   - Compare fixed-Mpc `linking_length` against a linking length expressed as a
+     factor of the source halo mean separation.
+   - Re-run focused sweeps on `n032`, `n064`, `n128`, and `n256`.
    - Keep broad sweeps and optimization for a later milestone.
 
 3. Add bridge-density scoring only after the geometry-only baseline has a
@@ -155,6 +167,7 @@ Planned:
 - Added unit tests for graph connected-component merging.
 - Added unit tests for VIDE `voidDesc` parsing and void size-function metrics.
 - Added CLI test coverage for `pinvoid paired-prototype`.
+- Added unit and CLI test coverage for geometry-only parameter sweeps.
 - Add ignored local integration checks using:
   - `runs/pinocchio-lowres/n032`
   - `runs/pinocchio-lowres/n032_paired`

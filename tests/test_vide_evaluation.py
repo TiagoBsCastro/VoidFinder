@@ -61,6 +61,19 @@ def test_compare_void_size_functions_uses_shared_bins() -> None:
     assert comparison.count_l1_difference == 1
 
 
+def test_compare_void_size_functions_allows_empty_predicted_side() -> None:
+    comparison = compare_void_size_functions(
+        [],
+        [1.0, 2.0],
+        box_size_mpc_h=10.0,
+        bins=2,
+    )
+
+    np.testing.assert_array_equal(comparison.predicted.counts, [0, 0])
+    np.testing.assert_array_equal(comparison.reference.counts, [1, 1])
+    assert comparison.count_l1_difference == 2
+
+
 def test_compute_void_size_function_rejects_non_positive_radii() -> None:
     with pytest.raises(EvaluationError, match="positive finite radii"):
         compute_void_size_function([1.0, 0.0], box_size_mpc_h=10.0)

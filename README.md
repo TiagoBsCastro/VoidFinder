@@ -6,6 +6,8 @@ identifying cosmic voids from PINOCCHIO-based structure formation products.
 The package now contains the repository scaffold, PINOCCHIO catalog I/O, and the
 first geometry-only paired-halo void-finder prototype. The current prototype is
 intended for Milestone 3 development and is not yet calibrated against VIDE.
+Current sweep scores are exploratory and should not be treated as final
+calibrated parameters.
 
 This repository intentionally does not yet implement:
 
@@ -44,6 +46,24 @@ If VIDE `voidDesc_all_*` references are provided with `--vide-a` and `--vide-b`,
 the command also reports reference void counts. Add `--size-bins N` to print a
 shared-bin void size-function count difference.
 
+Run a small geometry-only parameter sweep against paired VIDE references:
+
+```bash
+pinvoid paired-sweep \
+  runs/pinocchio-lowres/n032/pinocchio.0.0000.lowres_n032.catalog.out \
+  runs/pinocchio-lowres/n032_paired/pinocchio.0.0000.lowres_n032_paired.catalog.out \
+  runs/vide-lowres/n032/outputs/pinocchio_n032_ss1.0/sample_pinocchio_n032_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n032_ss1.0_z0.00_d00.out \
+  runs/vide-lowres/n032_paired/outputs/pinocchio_n032_paired_ss1.0/sample_pinocchio_n032_paired_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n032_paired_ss1.0_z0.00_d00.out \
+  --box-size 256 \
+  --rho-bar 8.63025e10 \
+  --linking-length 6 \
+  --linking-length 8 \
+  --radius-a0 0.7 \
+  --radius-a0 1.0 \
+  --adjacency-factor 0.8 \
+  --adjacency-factor 1.2
+```
+
 ## Current Development Scope
 
 The package currently contains the repository scaffold plus Milestone 2 input
@@ -60,6 +80,7 @@ design primitives and the first Milestone 3 algorithm slice:
 - symmetric A-to-B and B-to-A paired execution;
 - VIDE `voidDesc` reading and void size-function metrics;
 - a local `pinvoid paired-prototype` integration command;
+- a local `pinvoid paired-sweep` geometry-only calibration scaffold;
 - documentation of the expected PINOCCHIO catalog columns.
 
 PINOCCHIO execution, calibrated VIDE comparison, bridge-density scoring, and

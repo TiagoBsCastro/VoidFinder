@@ -1,5 +1,13 @@
 """Tools for PINOCCHIO-based cosmic void finding."""
 
+from pinocchio_voids.calibration import (
+    CalibrationError,
+    DirectionalGeometryScore,
+    PairedGeometrySweepResult,
+    score_direction_against_vide,
+    score_paired_result_against_vide,
+    sweep_geometry_parameters,
+)
 from pinocchio_voids.catalog import CatalogValidationError, HaloCatalog, TracerCatalog
 from pinocchio_voids.evaluation import (
     EvaluationError,
@@ -37,12 +45,15 @@ from pinocchio_voids.voidfinder import (
 )
 
 __all__ = [
+    "CalibrationError",
     "CatalogValidationError",
     "DirectionalVoidFinderResult",
+    "DirectionalGeometryScore",
     "EvaluationError",
     "FinalVoid",
     "FinalVoidCatalog",
     "HaloCatalog",
+    "PairedGeometrySweepResult",
     "PairedVoidFinderConfig",
     "PairedVoidFinderResult",
     "PeriodicGeometryError",
@@ -68,7 +79,10 @@ __all__ = [
     "protovoid_radius_from_mass",
     "run_directional_void_finder",
     "run_paired_halo_void_finder",
+    "score_direction_against_vide",
+    "score_paired_result_against_vide",
     "source_clusters_to_protovoids",
+    "sweep_geometry_parameters",
 ]
 
 __version__ = "0.1.0"

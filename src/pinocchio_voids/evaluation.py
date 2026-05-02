@@ -62,6 +62,15 @@ def _positive_radii(radii_mpc_h: ArrayLike) -> NDArray[np.float64]:
     return radii
 
 
+def _comparison_radii(name: str, radii_mpc_h: ArrayLike) -> NDArray[np.float64]:
+    radii = np.asarray(radii_mpc_h, dtype=np.float64)
+    if radii.ndim != 1:
+        raise EvaluationError(f"{name} must be one-dimensional")
+    if not np.all(np.isfinite(radii)) or np.any(radii <= 0):
+        raise EvaluationError(f"{name} must contain positive finite radii")
+    return radii
+
+
 def _bin_edges(radii: NDArray[np.float64], bins: int | ArrayLike) -> NDArray[np.float64]:
     if isinstance(bins, int):
         if bins < 1:
@@ -80,20 +89,15 @@ def _bin_edges(radii: NDArray[np.float64], bins: int | ArrayLike) -> NDArray[np.
     return edges
 
 
-def compute_void_size_function(
-    radii_mpc_h: ArrayLike,
+def _compute_size_function_with_edges(
+    radii: NDArray[np.float64],
     *,
     box_size_mpc_h: float,
-    bins: int | ArrayLike = 10,
+    edges: NDArray[np.float64],
 ) -> VoidSizeFunction:
-    """Compute ``dN / dlnR / V`` from effective void radii."""
-
-    radii = _positive_radii(radii_mpc_h)
-    box_size = _validate_positive("box_size_mpc_h", box_size_mpc_h)
-    edges = _bin_edges(radii, bins)
     counts, _ = np.histogram(radii, bins=edges)
     dlnr = np.diff(np.log(edges))
-    volume = box_size**3
+    volume = box_size_mpc_h**3
     density = counts / (volume * dlnr)
     centers = np.sqrt(edges[:-1] * edges[1:])
     return VoidSizeFunction(
@@ -105,6 +109,20 @@ def compute_void_size_function(
     )
 
 
+def compute_void_size_function(
+    radii_mpc_h: ArrayLike,
+    *,
+    box_size_mpc_h: float,
+    bins: int | ArrayLike = 10,
+) -> VoidSizeFunction:
+    """Compute ``dN / dlnR / V`` from effective void radii."""
+
+    radii = _positive_radii(radii_mpc_h)
+    box_size = _validate_positive("box_size_mpc_h", box_size_mpc_h)
+    edges = _bin_edges(radii, bins)
+    return _compute_size_function_with_edges(radii, box_size_mpc_h=box_size, edges=edges)
+
+
 def compare_void_size_functions(
     predicted_radii_mpc_h: ArrayLike,
     reference_radii_mpc_h: ArrayLike,
@@ -114,19 +132,22 @@ def compare_void_size_functions(
 ) -> VoidSizeFunctionComparison:
     """Compare predicted and reference void size functions on shared bins."""
 
-    predicted_radii = _positive_radii(predicted_radii_mpc_h)
-    reference_radii = _positive_radii(reference_radii_mpc_h)
+    predicted_radii = _comparison_radii("predicted_radii_mpc_h", predicted_radii_mpc_h)
+    reference_radii = _comparison_radii("reference_radii_mpc_h", reference_radii_mpc_h)
+    if predicted_radii.size == 0 and reference_radii.size == 0:
+        raise EvaluationError("At least one radius array must be non-empty")
     combined_radii = np.concatenate([predicted_radii, reference_radii])
     edges = _bin_edges(combined_radii, bins)
-    predicted = compute_void_size_function(
+    box_size = _validate_positive("box_size_mpc_h", box_size_mpc_h)
+    predicted = _compute_size_function_with_edges(
         predicted_radii,
-        box_size_mpc_h=box_size_mpc_h,
-        bins=edges,
+        box_size_mpc_h=box_size,
+        edges=edges,
     )
-    reference = compute_void_size_function(
+    reference = _compute_size_function_with_edges(
         reference_radii,
-        box_size_mpc_h=box_size_mpc_h,
-        bins=edges,
+        box_size_mpc_h=box_size,
+        edges=edges,
     )
     density_delta = np.abs(
         predicted.density_dndlnr_per_mpc_h3 - reference.density_dndlnr_per_mpc_h3

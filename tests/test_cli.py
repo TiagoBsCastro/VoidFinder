@@ -36,3 +36,35 @@ def test_paired_prototype_command_reports_direction_summaries() -> None:
     assert "VSF Count Difference" in result.output
     assert "A" in result.output
     assert "B" in result.output
+
+
+def test_paired_sweep_command_reports_sorted_parameter_rows() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "paired-sweep",
+            "tests/fixtures/pinocchio_pair_a.out",
+            "tests/fixtures/pinocchio_pair_b.out",
+            "tests/fixtures/vide_voidDesc_all_small.out",
+            "tests/fixtures/vide_voidDesc_all_small.out",
+            "--box-size",
+            "10.0",
+            "--rho-bar",
+            "1.0",
+            "--linking-length",
+            "0.3",
+            "--linking-length",
+            "1.0",
+            "--size-bins",
+            "2",
+            "--top",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Geometry Sweep" in result.output
+    assert "A Pred/VIDE" in result.output
+    assert "B Pred/VIDE" in result.output
