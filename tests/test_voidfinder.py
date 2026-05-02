@@ -156,3 +156,27 @@ def test_paired_pipeline_runs_symmetrically_on_tiny_catalogs() -> None:
     assert len(result.voids_a.voids) == 1
     assert result.voids_b.voids.voids[0].total_source_mass_msun_h == pytest.approx(2.0)
     assert result.voids_a.voids.voids[0].total_source_mass_msun_h == pytest.approx(6.0)
+
+
+def test_paired_pipeline_can_use_source_specific_linking_lengths() -> None:
+    catalog_a = make_halo_catalog(
+        [[9.9, 0.0, 0.0], [0.1, 0.0, 0.0]],
+        [1.0, 1.0],
+    )
+    catalog_b = make_halo_catalog(
+        [[4.6, 0.0, 0.0], [5.4, 0.0, 0.0]],
+        [3.0, 3.0],
+    )
+    config = PairedVoidFinderConfig(
+        linking_length_mpc_h=0.3,
+        source_b_linking_length_mpc_h=1.0,
+        min_cluster_members=2,
+        reference_rho_bar_msun_h_mpc3=1.0,
+    )
+
+    result = run_paired_halo_void_finder(catalog_a, catalog_b, config=config)
+
+    assert len(result.voids_b.source_clusters) == 1
+    assert len(result.voids_a.source_clusters) == 1
+    assert result.voids_b.voids.voids[0].total_source_mass_msun_h == pytest.approx(2.0)
+    assert result.voids_a.voids.voids[0].total_source_mass_msun_h == pytest.approx(6.0)

@@ -17,7 +17,8 @@ catalogs:
 - Matching VIDE reference outputs exist locally under `runs/vide-lowres/` and
   should be used as calibration and evaluation targets.
 - The initial geometry-only paired-halo void-finding prototype is implemented.
-- Geometry-only calibration scaffolding has started.
+- Geometry-only calibration scaffolding now includes guarded sweep scoring and
+  source mean-spacing linking factors.
 - Bridge-density scoring, PINOCCHIO execution orchestration, and optimization
   have not started.
 
@@ -67,6 +68,10 @@ Completed so far:
 - Added `pinvoid paired-prototype` for local ignored paired-run checks.
 - Added `pinvoid paired-sweep` for deterministic geometry-only parameter
   inspection against paired VIDE references.
+- Added a non-degenerate sweep score guard so rows with too few predicted voids
+  do not outrank viable calibration regions solely through low raw L1.
+- Added `--linking-factor` support for linking lengths expressed as a factor of
+  source halo mean spacing, with separate resolved source-A/source-B lengths.
 - Added unit tests and tiny paired PINOCCHIO fixtures.
 - Verified a local ignored `n032` paired run can execute without writing
   generated outputs.
@@ -84,14 +89,22 @@ Completed so far:
 - Cross-checking low-link parameter regions showed resolution dependence:
   `n064` count totals can be close to VIDE, while the same style of fixed-Mpc
   linking overpredicts strongly on `n128` and `n256`.
+- Focused local mean-spacing-factor sweeps were run on `n032`, `n064`, `n128`,
+  and `n256`. The top guarded rows avoided the earlier zero-void degeneracy.
+  The sampled grids favored factor `0.15` for `n032`, `n064`, and `n128`, while
+  `n256` favored a smaller factor near `0.10`.
+  - `n032`: factor `0.15`, resolved links `5.51/5.51`, counts `3/9` and `4/4`.
+  - `n064`: factor `0.15`, resolved links `3.33/3.35`, counts `6/18` and `13/22`.
+  - `n128`: factor `0.15`, resolved links `2.13/2.14`, counts `58/50` and `68/65`.
+  - `n256`: factor `0.10`, resolved links `0.99/1.00`, counts `40/121` and `60/124`.
 
 Planned:
 
-- Inspect and refine the geometry-only prototype using
-  `runs/pinocchio-lowres/n032` and `runs/pinocchio-lowres/n032_paired`.
-- Validate the same pipeline on the `n064`, `n128`, and `n256` paired catalogs.
+- Refine mean-spacing-factor calibration with focused grids across `n032`,
+  `n064`, `n128`, and `n256`.
+- Add lightweight per-bin size-function inspection for top sweep rows.
 - Use `voidDesc_all_*` outputs under `runs/vide-lowres/` as reference catalogs
-  for evaluation once the geometry-only prototype is inspectable.
+  for evaluation while keeping generated run products ignored.
 - Keep pure synthetic catalogs as unit-test fixtures, not the main development
   path.
 
@@ -108,9 +121,9 @@ Entry criteria:
 Remaining Phase 1 scope:
 
 - Inspect geometry-only output quality before adding bridge-density scoring.
-- Add a non-degenerate geometry-only score guard before trusting ranked sweeps.
-- Inspect whether `linking_length` should be parameterized relative to source
-  halo mean spacing or another resolution-aware scale.
+- Refine source mean-spacing factor grids and decide whether one factor can span
+  all tested low-resolution catalogs.
+- Inspect whether an additional resolution-aware scale is needed for `n256`.
 - Keep calibration as small deterministic grids, not a broad optimizer.
 
 ## Milestone 4: VIDE Evaluation and Workflow Integration - Not Started
@@ -138,17 +151,17 @@ Planned:
 
 ## Next Tasks
 
-1. Fix the geometry-only sweep score so degenerate underprediction does not rank
-   as the best calibration region.
-   - Penalize or filter directions where predicted void counts fall below a
-     minimum fraction of the VIDE count.
-   - Keep reporting raw binned count L1 for transparency.
-
-2. Inspect resolution-aware clustering parameters.
-   - Compare fixed-Mpc `linking_length` against a linking length expressed as a
-     factor of the source halo mean separation.
-   - Re-run focused sweeps on `n032`, `n064`, `n128`, and `n256`.
+1. Refine the resolution-aware factor grid.
+   - Densify factors around `0.10` through `0.18`, especially for `n256`.
+   - Compare count totals and binned size-function residuals separately so the
+     ranking is not driven by one diagnostic.
    - Keep broad sweeps and optimization for a later milestone.
+
+2. Add lightweight evaluation output for inspection.
+   - Export or print per-bin predicted/reference size-function counts for top
+     rows.
+   - Add a small helper for comparing top-row centers/radii against VIDE
+     summaries without committing generated run products.
 
 3. Add bridge-density scoring only after the geometry-only baseline has a
    defensible parameter region.
@@ -168,6 +181,8 @@ Planned:
 - Added unit tests for VIDE `voidDesc` parsing and void size-function metrics.
 - Added CLI test coverage for `pinvoid paired-prototype`.
 - Added unit and CLI test coverage for geometry-only parameter sweeps.
+- Added unit and CLI test coverage for guarded calibration scores and
+  mean-spacing linking factors.
 - Add ignored local integration checks using:
   - `runs/pinocchio-lowres/n032`
   - `runs/pinocchio-lowres/n032_paired`
@@ -194,4 +209,5 @@ Use the named Miniforge environment:
 /home/tcastro/miniforge3/envs/voidfinder/bin/python -m pytest
 /home/tcastro/miniforge3/envs/voidfinder/bin/pinvoid smoke-test
 /home/tcastro/miniforge3/envs/voidfinder/bin/pinvoid validate-config tests/fixtures/run_config_small.yaml
+/home/tcastro/miniforge3/envs/voidfinder/bin/pinvoid paired-sweep --help
 ```

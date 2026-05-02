@@ -68,3 +68,33 @@ def test_paired_sweep_command_reports_sorted_parameter_rows() -> None:
     assert "Geometry Sweep" in result.output
     assert "A Pred/VIDE" in result.output
     assert "B Pred/VIDE" in result.output
+
+
+def test_paired_sweep_command_accepts_linking_factor() -> None:
+    runner = CliRunner()
+
+    result = runner.invoke(
+        app,
+        [
+            "paired-sweep",
+            "tests/fixtures/pinocchio_pair_a.out",
+            "tests/fixtures/pinocchio_pair_b.out",
+            "tests/fixtures/vide_voidDesc_all_small.out",
+            "tests/fixtures/vide_voidDesc_all_small.out",
+            "--box-size",
+            "10.0",
+            "--rho-bar",
+            "1.0",
+            "--linking-factor",
+            "0.05",
+            "--size-bins",
+            "2",
+            "--top",
+            "1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert "Geometry Sweep" in result.output
+    assert "factor" in result.output
+    assert "Src A/B Link" in result.output

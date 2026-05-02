@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Iterable, Literal
 
 import numpy as np
@@ -218,6 +218,7 @@ class PairedVoidFinderConfig:
 
     linking_length_mpc_h: float
     reference_rho_bar_msun_h_mpc3: float
+    source_b_linking_length_mpc_h: float | None = None
     min_cluster_members: int = 1
     min_cluster_mass_msun_h: float = 0.0
     radius_a0: float = 1.0
@@ -232,6 +233,15 @@ class PairedVoidFinderConfig:
             "linking_length_mpc_h",
             _validate_positive("linking_length_mpc_h", self.linking_length_mpc_h),
         )
+        if self.source_b_linking_length_mpc_h is not None:
+            object.__setattr__(
+                self,
+                "source_b_linking_length_mpc_h",
+                _validate_positive(
+                    "source_b_linking_length_mpc_h",
+                    self.source_b_linking_length_mpc_h,
+                ),
+            )
         object.__setattr__(
             self,
             "reference_rho_bar_msun_h_mpc3",
@@ -622,10 +632,17 @@ def run_paired_halo_void_finder(
         target_label=label_b,
         config=config,
     )
+    config_b = config
+    if config.source_b_linking_length_mpc_h is not None:
+        config_b = replace(
+            config,
+            linking_length_mpc_h=config.source_b_linking_length_mpc_h,
+            source_b_linking_length_mpc_h=None,
+        )
     voids_a = run_directional_void_finder(
         catalog_b,
         source_label=label_b,
         target_label=label_a,
-        config=config,
+        config=config_b,
     )
     return PairedVoidFinderResult(voids_a=voids_a, voids_b=voids_b)

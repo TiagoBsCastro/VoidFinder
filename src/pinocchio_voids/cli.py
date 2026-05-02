@@ -18,7 +18,7 @@ from pinocchio_voids.voidfinder import (
 )
 
 app = typer.Typer(help="PINOCCHIO-based cosmic void finder utilities.")
-console = Console()
+console = Console(width=120)
 
 
 @app.callback()
@@ -78,7 +78,7 @@ def _add_size_function_row(
     box_size_mpc_h: float,
     bins: int,
 ) -> bool:
-    if reference_path is None or len(result.voids) == 0:
+    if reference_path is None:
         return False
 
     reference = read_vide_void_desc(reference_path)
@@ -248,9 +248,14 @@ def paired_sweep(
         help="Mean matter density used by the protovoid radius mapping.",
     ),
     linking_lengths_mpc_h: list[float] = typer.Option(
-        [8.0],
+        [],
         "--linking-length",
         help="FoF linking length to test. Repeat for multiple values.",
+    ),
+    linking_length_mean_spacing_factors: list[float] = typer.Option(
+        [],
+        "--linking-factor",
+        help="Source halo mean-spacing factor to test. Repeat for multiple values.",
     ),
     radius_a0_values: list[float] = typer.Option(
         [1.0],
@@ -282,6 +287,11 @@ def paired_sweep(
         "--size-bins",
         help="Number of shared log-radius bins used for VIDE size-function scoring.",
     ),
+    min_predicted_fraction: float = typer.Option(
+        0.25,
+        "--min-predicted-fraction",
+        help="Penalize sweep rows below this predicted/VIDE count fraction.",
+    ),
     top: int = typer.Option(
         10,
         "--top",
@@ -297,41 +307,57 @@ def paired_sweep(
     )
     reference_a = read_vide_void_desc(vide_a)
     reference_b = read_vide_void_desc(vide_b)
+    fixed_linking_lengths = linking_lengths_mpc_h
+    if not fixed_linking_lengths and not linking_length_mean_spacing_factors:
+        fixed_linking_lengths = [8.0]
     results = sweep_geometry_parameters(
         paired.catalog_a,
         paired.catalog_b,
         reference_a=reference_a,
         reference_b=reference_b,
         reference_rho_bar_msun_h_mpc3=reference_rho_bar_msun_h_mpc3,
-        linking_lengths_mpc_h=linking_lengths_mpc_h,
+        linking_lengths_mpc_h=fixed_linking_lengths,
+        linking_length_mean_spacing_factors=linking_length_mean_spacing_factors,
         radius_a0_values=radius_a0_values,
         radius_alpha_values=radius_alpha_values,
         adjacency_factors=adjacency_factors,
         min_cluster_members=min_cluster_members,
         min_cluster_mass_msun_h=min_cluster_mass_msun_h,
         bins=size_bins,
+        min_predicted_fraction=min_predicted_fraction,
     )
 
     table = Table(title="Geometry Sweep")
     table.add_column("Rank", justify="right")
+    table.add_column("Mode")
     table.add_column("Link", justify="right")
+    table.add_column("Src A/B Link", justify="right")
     table.add_column("a0", justify="right")
     table.add_column("alpha", justify="right")
     table.add_column("adj", justify="right")
     table.add_column("A Pred/VIDE", justify="right")
     table.add_column("B Pred/VIDE", justify="right")
-    table.add_column("L1", justify="right")
+    table.add_column("Raw", justify="right")
+    table.add_column("Guard", justify="right")
+    table.add_column("Deg", justify="right")
 
     for rank, result in enumerate(results[:top], start=1):
         config = result.config
         table.add_row(
             str(rank),
-            f"{config.linking_length_mpc_h:g}",
+            "factor" if result.linking_mode == "mean_spacing" else "fixed",
+            f"{result.linking_value:g}",
+            (
+                f"{result.source_a_linking_length_mpc_h:g}/"
+                f"{result.source_b_linking_length_mpc_h:g}"
+            ),
             f"{config.radius_a0:g}",
             f"{config.radius_alpha:g}",
             f"{config.adjacency_factor:g}",
             f"{result.score_a.predicted_void_count}/{result.score_a.reference_void_count}",
             f"{result.score_b.predicted_void_count}/{result.score_b.reference_void_count}",
             str(result.total_count_l1_difference),
+            str(result.total_guarded_count_l1_difference),
+            "yes" if result.is_degenerate_underprediction else "no",
         )
     console.print(table)
