@@ -21,3 +21,15 @@ python -m pip install -e ".[dev]"
 ```bash
 pinvoid smoke-test
 ```
+
+## Current Development Scope
+
+The package currently contains the repository scaffold plus Milestone 2 input
+design primitives:
+
+- validated YAML run configuration models;
+- a lightweight reader for ASCII PINOCCHIO halo catalogs;
+- documentation of the expected PINOCCHIO catalog columns.
+
+Void finding, PINOCCHIO execution, and optimization remain intentionally out of
+scope for this stage.

@@ -38,6 +38,7 @@ output/
 results/
 runs/
 simulations/
+external/
 checkpoints/
 *.h5
 *.hdf5

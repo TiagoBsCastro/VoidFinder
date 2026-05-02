@@ -1,0 +1,10 @@
+# Group catalog for redshift 0.000000 and minimal mass of 20 particles
+#    1) group ID
+#    2) group mass (Msun/h)
+# 3- 5) initial position (Mpc/h)
+# 6- 8) final position (Mpc/h)
+# 9-11) velocity (km/s)
+#   12) number of particles
+       101  1.000000e+13       1.00       2.00       3.00       4.00       5.00       6.00      10.00      20.00      30.00           20
+       102  2.500000e+13       7.00       8.00       9.00      10.00      11.00      12.00     -10.00     -20.00     -30.00           50
+       103  5.000000e+13      13.00      14.00      15.00     260.00      -1.00     257.00       0.00       1.00       2.00          100
