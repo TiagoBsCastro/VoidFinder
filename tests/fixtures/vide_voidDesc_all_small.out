@@ -1,0 +1,4 @@
+4 particles, 2 voids.
+Void# FileVoid# CoreParticle CoreDens ZoneVol Zone#Part Void#Zones VoidVol Void#Part VoidDensContrast VoidProb
+0 0 10 0.3 4.1887902047863905 1 1 4.1887902047863905 1 1.1 0.2
+1 1 20 0.4 33.510321638291124 2 1 33.510321638291124 2 1.2 0.3

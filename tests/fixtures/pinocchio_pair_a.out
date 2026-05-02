@@ -1,0 +1,9 @@
+# Tiny paired PINOCCHIO catalog A for Milestone 3 tests
+#    1) group ID
+#    2) group mass (Msun/h)
+# 3- 5) initial position (Mpc/h)
+# 6- 8) final position (Mpc/h)
+# 9-11) velocity (km/s)
+#   12) number of particles
+       101  1.000000e+12       0.00       0.00       0.00       9.90       0.00       0.00       0.00       0.00       0.00           10
+       102  1.000000e+12       0.00       0.00       0.00       0.10       0.00       0.00       0.00       0.00       0.00           10

@@ -5,8 +5,8 @@ stage, what has already been completed, and the next implementation tasks.
 
 ## Current Stage
 
-We are ready to start **Milestone 3** with real low-resolution paired
-PINOCCHIO catalogs:
+We have started **Milestone 3** with real low-resolution paired PINOCCHIO
+catalogs:
 
 - Milestone 1 is complete.
 - Milestone 2 is complete.
@@ -16,8 +16,9 @@ PINOCCHIO catalogs:
   `n128`, and `n256` under `runs/pinocchio-lowres/`.
 - Matching VIDE reference outputs exist locally under `runs/vide-lowres/` and
   should be used as calibration and evaluation targets.
-- Void finding, calibration, PINOCCHIO execution orchestration, and optimization
-  have not started.
+- The initial geometry-only paired-halo void-finding prototype is implemented.
+- Calibration, bridge-density scoring, PINOCCHIO execution orchestration, and
+  optimization have not started.
 
 ## Milestone 1: Repository Foundation - Done
 
@@ -44,16 +45,38 @@ Completed:
 - Documented coordinate, unit, and periodic-box conventions.
 - Added tests for shape validation, unit metadata, read-only arrays, and periodic wrapping.
 
-## Milestone 3: Paired-Halo Void-Finder Prototype - Ready to Begin
+## Milestone 3: Paired-Halo Void-Finder Prototype - In Progress
+
+Completed so far:
+
+- Added paired PINOCCHIO catalog loading into canonical `HaloCatalog` objects.
+- Added minimum-image distance, displacement, and periodic center-of-mass
+  helpers.
+- Added periodic FoF-like source clustering with `linking_length`,
+  `min_cluster_members`, and `min_cluster_mass` controls.
+- Added source-cluster summaries with member indices, total mass,
+  mass-weighted center, richness, and effective radius.
+- Added spherical protovoid construction with
+  `R_proto = a0 R_L(M)^alpha`.
+- Added geometry-only protovoid adjacency and connected-component merging.
+- Added final void catalog fields for center, effective radius, member
+  protovoids, source-cluster IDs, and total source mass.
+- Added symmetric A-to-B and B-to-A execution.
+- Added a VIDE `voidDesc` reader and first void size-function metric.
+- Added `pinvoid paired-prototype` for local ignored paired-run checks.
+- Added unit tests and tiny paired PINOCCHIO fixtures.
+- Verified a local ignored `n032` paired run can execute without writing
+  generated outputs.
+- Verified the same geometry-only prototype executes on local `n064`, `n128`,
+  and `n256` paired catalogs.
+- Initial geometry-only counts are substantially above VIDE counts on several
+  low-resolution pairs, so parameter inspection and calibration should happen
+  before bridge-density scoring is added.
 
 Planned:
 
-- Implement the first clear, testable prototype of the paired-halo algorithm in
-  `ALGORITHM.md`.
-- Use paired canonical `HaloCatalog` inputs built directly from PINOCCHIO final
-  halo positions and masses.
-- Start with `runs/pinocchio-lowres/n032` and
-  `runs/pinocchio-lowres/n032_paired` for fast iteration.
+- Inspect and refine the geometry-only prototype using
+  `runs/pinocchio-lowres/n032` and `runs/pinocchio-lowres/n032_paired`.
 - Validate the same pipeline on the `n064`, `n128`, and `n256` paired catalogs.
 - Use `voidDesc_all_*` outputs under `runs/vide-lowres/` as reference catalogs
   for evaluation once the geometry-only prototype is inspectable.
@@ -70,33 +93,11 @@ Entry criteria:
   fixtures only.
 - No execution orchestration is mixed into the scientific algorithm.
 
-Phase 1 implementation scope:
+Remaining Phase 1 scope:
 
-- Add paired-run data loading.
-  - Take two PINOCCHIO catalog paths plus box size.
-  - Return canonical `HaloCatalog` objects for catalogs A and B.
-  - Use final halo positions and masses.
-- Add periodic geometry utilities.
-  - Minimum-image displacement and distance.
-  - Periodic center-of-mass helper for cluster centers.
-- Implement periodic FoF-like halo clustering.
-  - Configure with `linking_length`, `min_cluster_members`, and
-    `min_cluster_mass`.
-  - Return source-cluster catalogs with member indices, total mass,
-    mass-weighted center, richness, and effective radius.
-- Implement spherical protovoid construction.
-  - Map source clusters in A into protovoids for B.
-  - Map source clusters in B into protovoids for A.
-  - Use `R_proto = a0 R_L(M)^alpha` with `radius_a0`, `radius_alpha`, and
-    `reference_rho_bar`.
-- Implement the first graph merge prototype.
-  - Build adjacency from `d_ij < adjacency_factor * (R_i + R_j)`.
-  - Start with a geometric score only.
-  - Merge connected components into final voids.
-  - Return final void fields: center, effective radius, member protovoids,
-    source-cluster IDs, and total source mass.
-  - Defer bridge-density scoring until the geometry-only output is inspectable.
-- Run the same code path symmetrically for A-to-B and B-to-A.
+- Inspect geometry-only output quality before adding bridge-density scoring.
+- Tune or calibrate the first geometry-only parameters against VIDE size
+  functions.
 
 ## Milestone 4: VIDE Evaluation and Workflow Integration - Not Started
 
@@ -123,47 +124,37 @@ Planned:
 
 ## Next Tasks
 
-1. Add paired-run data loading.
-   - Read two PINOCCHIO halo catalog paths and a box size.
-   - Return canonical `HaloCatalog` objects for A and B.
-   - Add tiny committed paired fixtures for tests.
+1. Inspect geometry-only output quality.
+   - Compare predicted void radii and counts with `runs/vide-lowres/n032` and
+     `runs/vide-lowres/n032_paired`.
+   - Use `pinvoid paired-prototype --size-bins` for a first shared-bin void
+     size-function count difference.
+   - Decide the first bridge-density score definition after geometry-only
+     behavior is visible.
 
-2. Add periodic geometry utilities.
-   - Minimum-image displacement and distance.
-   - Periodic center-of-mass helper.
-   - Tests for boundary-crossing pairs.
+2. Start calibration scaffolding only after geometry-only output is understood.
+   - Use the package-level VIDE reader and void size-function metric.
+   - Explore `linking_length`, `radius_a0`, `radius_alpha`, and
+     `adjacency_factor` before adding new score terms.
+   - Keep broad sweeps and optimization for a later milestone.
 
-3. Implement Phase 1 source clustering.
-   - Periodic FoF-like clustering with the initial free parameters from
-     `ALGORITHM.md`.
-   - Source-cluster summaries: member indices, total mass, mass-weighted center,
-     richness, and effective radius.
-
-4. Implement spherical protovoids.
-   - Convert source clusters in A into protovoids for B.
-   - Convert source clusters in B into protovoids for A.
-   - Test mass-to-radius mapping and A/B symmetry.
-
-5. Implement geometry-only graph merging.
-   - Build adjacency with `d_ij < adjacency_factor * (R_i + R_j)`.
-   - Use connected components for final voids.
-   - Defer bridge-density score until geometry-only output can be inspected.
-
-6. Add first VIDE evaluation hooks.
-   - Read `voidDesc_all_*` reference catalogs.
-   - Compare predicted and reference void size functions.
-   - Keep calibration sweeps and optimization for a later milestone.
+3. Add bridge-density scoring only after the geometry-only baseline has a
+   defensible parameter region.
+   - Use source-catalog halo density between adjacent source clusters.
+   - Keep the score modular so it can be disabled for baseline comparisons.
 
 ## Test Plan
 
 - Keep existing package tests passing.
-- Add unit tests for periodic distance and displacement.
-- Add unit tests for periodic FoF clustering across box boundaries.
-- Add unit tests for cluster mass, richness, and center summaries.
-- Add unit tests for protovoid radius mapping.
-- Add unit tests for symmetric A-to-B and B-to-A execution on tiny paired
+- Added unit tests for periodic distance and displacement.
+- Added unit tests for periodic FoF clustering across box boundaries.
+- Added unit tests for cluster mass, richness, and center summaries.
+- Added unit tests for protovoid radius mapping.
+- Added unit tests for symmetric A-to-B and B-to-A execution on tiny paired
   fixtures.
-- Add unit tests for graph connected-component merging.
+- Added unit tests for graph connected-component merging.
+- Added unit tests for VIDE `voidDesc` parsing and void size-function metrics.
+- Added CLI test coverage for `pinvoid paired-prototype`.
 - Add ignored local integration checks using:
   - `runs/pinocchio-lowres/n032`
   - `runs/pinocchio-lowres/n032_paired`
