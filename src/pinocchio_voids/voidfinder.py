@@ -14,6 +14,8 @@ from pinocchio_voids.geometry import (
     minimum_image_displacement,
     periodic_center_of_mass,
     periodic_distance,
+    sphere_volume_from_radius,
+    spherical_equivalent_radius_from_volume,
 )
 
 MergedRadiusMode = Literal["volume_sum", "mass_sum"]
@@ -57,7 +59,11 @@ def _validate_non_negative(name: str, value: float) -> float:
 
 @dataclass(frozen=True)
 class SourceCluster:
-    """Summary of a compact halo source cluster."""
+    """Summary of a compact halo source cluster.
+
+    ``effective_radius_mpc_h`` is the source-cluster RMS size, not the final
+    void ``R_eff`` used in size-function comparisons.
+    """
 
     id: int
     member_indices: ArrayLike
@@ -162,7 +168,11 @@ class ProtovoidEdge:
 
 @dataclass(frozen=True)
 class FinalVoid:
-    """Merged geometry-only void catalog entry."""
+    """Merged geometry-only void catalog entry.
+
+    ``effective_radius_mpc_h`` is the spherical-equivalent radius of the
+    modeled final void volume.
+    """
 
     id: int
     center_mpc_h: ArrayLike
@@ -332,7 +342,7 @@ def lagrangian_radius_from_mass(
         "reference_rho_bar_msun_h_mpc3",
         reference_rho_bar_msun_h_mpc3,
     )
-    return float((3.0 * mass / (4.0 * np.pi * rho_bar)) ** (1.0 / 3.0))
+    return float(spherical_equivalent_radius_from_volume(mass / rho_bar))
 
 
 def protovoid_radius_from_mass(
@@ -528,7 +538,11 @@ def merge_protovoids(
         )
         total_mass = float(np.sum(source_masses))
         if radius_mode == "volume_sum":
-            effective_radius = float(np.sum(radii**3) ** (1.0 / 3.0))
+            effective_radius = float(
+                spherical_equivalent_radius_from_volume(
+                    np.sum(sphere_volume_from_radius(radii))
+                )
+            )
         else:
             if (
                 radius_a0 is None

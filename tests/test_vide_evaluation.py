@@ -21,6 +21,30 @@ def test_read_vide_void_desc_computes_effective_radii() -> None:
     np.testing.assert_allclose(catalog.effective_radii_mpc_h, [1.0, 2.0])
 
 
+def test_read_vide_void_desc_converts_normalized_volumes_from_sample_info(tmp_path) -> None:
+    catalog_path = tmp_path / "voidDesc_all_sample.out"
+    catalog_path.write_text(
+        "\n".join(
+            [
+                "4 particles, 1 void.",
+                "Void# FileVoid# CoreParticle CoreDens ZoneVol Zone#Part Void#Zones VoidVol Void#Part VoidDensContrast VoidProb",
+                "0 0 10 0.3 4.1887902047863905 1 1 4.1887902047863905 1 1.1 0.2",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    (tmp_path / "sample_info.txt").write_text(
+        "Estimated mean tracer separation (Mpc/h): 2.0\n",
+        encoding="utf-8",
+    )
+
+    catalog = read_vide_void_desc(catalog_path)
+
+    assert catalog.volume_scale_mpc_h3 == 8.0
+    np.testing.assert_allclose(catalog.void_volumes_mpc_h3, [4.1887902047863905 * 8.0])
+    np.testing.assert_allclose(catalog.effective_radii_mpc_h, [2.0])
+
+
 def test_read_vide_void_desc_rejects_missing_void_volume(tmp_path) -> None:
     invalid = tmp_path / "voidDesc_invalid.out"
     invalid.write_text("summary\nVoid# Radius\n0 1.0\n", encoding="utf-8")

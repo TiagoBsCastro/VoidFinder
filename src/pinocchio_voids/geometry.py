@@ -6,7 +6,11 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 
-class PeriodicGeometryError(ValueError):
+class GeometryError(ValueError):
+    """Raised when geometry inputs or parameters are invalid."""
+
+
+class PeriodicGeometryError(GeometryError):
     """Raised when periodic geometry inputs are invalid."""
 
 
@@ -24,6 +28,37 @@ def _as_xyz_array(name: str, values: ArrayLike) -> NDArray[np.float64]:
     if not np.all(np.isfinite(array)):
         raise PeriodicGeometryError(f"{name} contains non-finite values")
     return array
+
+
+def _positive_array(name: str, values: ArrayLike) -> NDArray[np.float64]:
+    array = np.asarray(values, dtype=np.float64)
+    if not np.all(np.isfinite(array)) or np.any(array <= 0.0):
+        raise GeometryError(f"{name} must contain positive finite values")
+    return array
+
+
+def sphere_volume_from_radius(radius_mpc_h: ArrayLike) -> float | NDArray[np.float64]:
+    """Return the volume of a sphere with radius ``radius_mpc_h``."""
+
+    radius = _positive_array("radius_mpc_h", radius_mpc_h)
+    volume = (4.0 * np.pi / 3.0) * radius**3
+    if volume.ndim == 0:
+        return float(volume)
+    readonly = volume.copy()
+    readonly.setflags(write=False)
+    return readonly
+
+
+def spherical_equivalent_radius_from_volume(volume_mpc_h3: ArrayLike) -> float | NDArray[np.float64]:
+    """Return ``R_eff = (3 V / 4 pi)^(1/3)`` for one or more volumes."""
+
+    volume = _positive_array("volume_mpc_h3", volume_mpc_h3)
+    radius = np.power(3.0 * volume / (4.0 * np.pi), 1.0 / 3.0)
+    if radius.ndim == 0:
+        return float(radius)
+    readonly = radius.copy()
+    readonly.setflags(write=False)
+    return readonly
 
 
 def minimum_image_displacement(
