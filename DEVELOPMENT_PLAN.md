@@ -92,6 +92,9 @@ Completed so far:
   ignored `n128` and `n256` finder-vs-VIDE comparison plots.
 - Added `scripts/calibrate_radius_scale.py` for cached paper-bin radius-scale
   calibration against VIDE references.
+- Added `scripts/calibrate_vsf_likelihood.py` for cached parameter searches
+  that maximize a Poisson likelihood of fixed-bin finder VSF counts against
+  VIDE counts.
 - Added a `Papers/` reference note for Jennings, Li & Hu 2013, the source of
   the Vdn/SVdW theoretical size-function baseline.
 - Fixed VIDE `voidDesc` radius handling: `VoidVol` is a normalized Voronoi
@@ -114,14 +117,23 @@ Completed so far:
 - The first corrected paper-bin diagnostics showed that the old parameters put
   finder voids below the `10-80 Mpc/h` paper range; this was a calibration
   issue, not a plotting issue.
-- A focused cached radius-scale calibration found non-degenerate `n128` and
-  `n256` rows with visible paper-bin finder VSFs:
-  - `n128`: linking factor `0.15`, `radius_a0=5`, `radius_alpha=1`,
-    `adjacency_factor=0.5`; counts `45/50` and `48/65`, medians
-    `29.9/30.1` and `27.8/34.2 Mpc/h`.
-  - `n256`: linking factor `0.12`, `radius_a0=6`, `radius_alpha=1`,
-    `adjacency_factor=0.35`; counts `78/121` and `95/124`, medians
-    `21.9/23.5` and `22.0/23.7 Mpc/h`.
+- Refined cached radius-scale sweeps set balanced no-theory calibration
+  defaults for `n128` and `n256`:
+  - `n128`: linking factor `0.15`, `radius_a0=4.5`, `radius_alpha=1.05`,
+    `adjacency_factor=0.4`; paper-bin counts `50/50` and `57/65`, medians
+    `29.0/30.1` and `27.2/34.2 Mpc/h`.
+  - `n256`: linking factor `0.13`, `radius_a0=6.5`, `radius_alpha=1`,
+    `adjacency_factor=0.3`; paper-bin counts `108/121` and `117/124`,
+    medians `24.6/23.5` and `23.5/23.7 Mpc/h`.
+- First narrow VSF-likelihood scans around the current defaults show:
+  - `n128`: the current balanced row remains the top non-degenerate likelihood
+    row in the tested grid, with total log-likelihood `-81.65`.
+  - `n256`: the likelihood prefers linking factor `0.13`, `radius_a0=5.5`,
+    `radius_alpha=1.05`, and `adjacency_factor=0.4`, with paper-bin counts
+    `100/121` and `113/124`, medians `22.6/23.5` and `21.2/23.7 Mpc/h`, and
+    total log-likelihood `-95.52`. The current balanced-count row is much
+    lower-ranked by this objective, so it should be compared visually before
+    replacing defaults.
 - Added unit tests and tiny paired PINOCCHIO fixtures.
 - Verified a local ignored `n032` paired run can execute without writing
   generated outputs.
@@ -152,9 +164,10 @@ Completed so far:
 
 Planned:
 
-- Refine the corrected radius-scale calibration. The current rows now put the
-  finder into the correct `10-80 Mpc/h` range, but count and shape residuals
-  remain, especially for `n256`.
+- Refine the corrected radius-scale calibration with the new VSF-likelihood
+  objective. The current balanced rows put the finder into the correct
+  `10-80 Mpc/h` range with much closer counts, but likelihood ranking exposes
+  remaining VSF shape residuals, especially for `n256`.
 - Audit the comparison with Lepinzan et al. 2025 before interpreting amplitude
   differences: match binning, volume normalization, halo mass cuts, tracer
   number density, and VIDE settings as closely as the local catalogs allow.
@@ -208,13 +221,15 @@ Planned:
 
 ## Next Tasks
 
-1. Refine the radius-scale calibration around the current best rows.
-   - `n128`: densify around linking factor `0.15`, `radius_a0=5`,
-     `adjacency_factor=0.35-0.5`.
-   - `n256`: densify around linking factor `0.12`, `radius_a0=6`,
-     `adjacency_factor=0.2-0.5`.
-   - Include `radius_alpha` values near `1.0` and inspect whether separate
-     `n128`/`n256` parameters are required.
+1. Refine the VSF-likelihood calibration around the current best rows.
+   - `n128`: densify around linking factor `0.15`, `radius_a0=4.5`,
+     `radius_alpha=1.05`, and `adjacency_factor=0.35-0.45`.
+   - `n256`: compare the previous balanced-count row
+     (`0.13`, `6.5`, `1.0`, `0.3`) with the first likelihood row
+     (`0.13`, `5.5`, `1.05`, `0.4`), then densify around the better visual and
+     likelihood tradeoff.
+   - Inspect whether separate `n128`/`n256` parameters are required or whether
+     a single resolution-aware rule can replace per-resolution defaults.
    - Compare count totals, paper-bin VSF residuals, and radius percentiles in
      default no-theory plots before adding optional theory overlays.
 
@@ -279,6 +294,8 @@ Planned:
   output.
 - Added tests for paper-bin radius-scale scoring, zero-in-bin degeneracy,
   cached calibration parity, and the calibration diagnostic script.
+- Added tests for Poisson VSF likelihood scoring, cached likelihood-sweep
+  ranking, and the VSF-likelihood calibration script.
 - Add ignored local integration checks using:
   - `runs/pinocchio-lowres/n128`
   - `runs/pinocchio-lowres/n128_paired`
@@ -316,6 +333,7 @@ Use the named Miniforge environment:
 /home/tcastro/miniforge3/envs/voidfinder/bin/pinvoid validate-config tests/fixtures/run_config_small.yaml
 /home/tcastro/miniforge3/envs/voidfinder/bin/pinvoid paired-sweep --help
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/calibrate_radius_scale.py --help
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/calibrate_vsf_likelihood.py --help
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n128_n256_void_size_functions.py --only n128
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n128_n256_void_size_functions.py --paper-bins --only n256
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n128_n256_void_size_functions.py --paper-bins --include-theory --only n256

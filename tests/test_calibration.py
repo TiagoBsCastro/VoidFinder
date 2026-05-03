@@ -2,11 +2,14 @@ import numpy as np
 
 from pinocchio_voids.calibration import (
     mean_halo_spacing_mpc_h,
+    poisson_vsf_log_likelihood,
     score_direction_against_vide,
     score_paired_radius_calibration,
     score_radius_calibration_radii,
+    score_vsf_likelihood_radii,
     sweep_geometry_parameters,
     sweep_radius_scale_parameters,
+    sweep_vsf_likelihood_parameters,
 )
 from pinocchio_voids.catalog import HaloCatalog
 from pinocchio_voids.io import read_vide_void_desc
@@ -192,6 +195,48 @@ def test_radius_calibration_marks_zero_paper_bin_finder_as_degenerate() -> None:
     assert score.is_degenerate
 
 
+def test_poisson_vsf_likelihood_prefers_matching_bin_counts() -> None:
+    matching = poisson_vsf_log_likelihood(
+        predicted_counts=[1, 1, 0],
+        reference_counts=[1, 1, 0],
+        count_floor=0.5,
+    )
+    missing_bin = poisson_vsf_log_likelihood(
+        predicted_counts=[2, 0, 0],
+        reference_counts=[1, 1, 0],
+        count_floor=0.5,
+    )
+
+    assert matching > missing_bin
+
+
+def test_score_vsf_likelihood_radii_uses_shared_vsf_bins() -> None:
+    matching = score_vsf_likelihood_radii(
+        target_label="A",
+        predicted_radii_mpc_h=[1.0, 2.0],
+        reference_radii_mpc_h=[1.0, 2.0],
+        box_size_mpc_h=100.0,
+        bins=[0.5, 1.5, 2.5],
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=2.5,
+        count_floor=0.5,
+    )
+    missing_bin = score_vsf_likelihood_radii(
+        target_label="A",
+        predicted_radii_mpc_h=[1.0],
+        reference_radii_mpc_h=[1.0, 2.0],
+        box_size_mpc_h=100.0,
+        bins=[0.5, 1.5, 2.5],
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=2.5,
+        count_floor=0.5,
+    )
+
+    assert matching.log_likelihood > missing_bin.log_likelihood
+    assert matching.negative_log_likelihood < missing_bin.negative_log_likelihood
+    assert matching.radius_score.size_score.predicted_void_count == 2
+
+
 def test_radius_scale_sweep_sorts_non_degenerate_rows_first() -> None:
     catalog_a = make_halo_catalog([[1.0, 0.0, 0.0]], [1.0])
     catalog_b = make_halo_catalog([[2.0, 0.0, 0.0]], [8.0])
@@ -219,6 +264,35 @@ def test_radius_scale_sweep_sorts_non_degenerate_rows_first() -> None:
     assert results[1].is_degenerate
     assert results[0].config.radius_a0 == 1.0
     assert results[1].score_a.is_zero_in_bin
+
+
+def test_vsf_likelihood_sweep_sorts_best_likelihood_first() -> None:
+    catalog_a = make_halo_catalog([[1.0, 0.0, 0.0]], [1.0])
+    catalog_b = make_halo_catalog([[2.0, 0.0, 0.0]], [8.0])
+    reference = read_vide_void_desc("tests/fixtures/vide_voidDesc_all_small.out")
+
+    results = sweep_vsf_likelihood_parameters(
+        catalog_a,
+        catalog_b,
+        reference_a=reference,
+        reference_b=reference,
+        reference_rho_bar_msun_h_mpc3=3.0 / (4.0 * np.pi),
+        linking_lengths_mpc_h=[0.1],
+        radius_a0_values=[1.0, 2.0],
+        radius_alpha_values=[1.0],
+        adjacency_factors=[1.0],
+        min_cluster_members_values=[1],
+        bins=[0.5, 1.5, 2.5],
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=2.5,
+        count_floor=0.5,
+        min_predicted_fraction=0.1,
+    )
+
+    assert len(results) == 2
+    assert not results[0].radius_result.is_degenerate
+    assert results[0].total_log_likelihood > results[1].total_log_likelihood
+    assert results[0].radius_result.config.radius_a0 == 1.0
 
 
 def test_cached_radius_scale_sweep_matches_uncached_score() -> None:

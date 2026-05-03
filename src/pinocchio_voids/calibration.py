@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from itertools import product
 from typing import Iterable, Literal
@@ -117,6 +118,29 @@ class PairedRadiusCalibrationResult:
 
 
 @dataclass(frozen=True)
+class DirectionalVsfLikelihoodScore:
+    """Poisson VSF likelihood score for one target direction."""
+
+    target_label: str
+    radius_score: DirectionalRadiusCalibrationScore
+    count_floor: float
+    log_likelihood: float
+    negative_log_likelihood: float
+
+
+@dataclass(frozen=True)
+class PairedVsfLikelihoodResult:
+    """One cached VSF-likelihood calibration row."""
+
+    radius_result: PairedRadiusCalibrationResult
+    score_a: DirectionalVsfLikelihoodScore
+    score_b: DirectionalVsfLikelihoodScore
+    count_floor: float
+    total_log_likelihood: float
+    total_negative_log_likelihood: float
+
+
+@dataclass(frozen=True)
 class _LinkingLengthCandidate:
     mode: Literal["fixed", "mean_spacing"]
     value: float
@@ -142,6 +166,13 @@ def _min_predicted_fraction(value: float) -> float:
     number = float(value)
     if not np.isfinite(number) or number < 0.0 or number > 1.0:
         raise CalibrationError("min_predicted_fraction must be between 0 and 1")
+    return number
+
+
+def _count_floor(value: float) -> float:
+    number = float(value)
+    if not np.isfinite(number) or number <= 0.0:
+        raise CalibrationError("count_floor must be positive and finite")
     return number
 
 
@@ -371,6 +402,90 @@ def score_radius_calibration_radii(
     )
 
 
+def poisson_vsf_log_likelihood(
+    *,
+    predicted_counts: ArrayLike,
+    reference_counts: ArrayLike,
+    count_floor: float = 0.5,
+) -> float:
+    """Return Poisson log-likelihood for binned VSF counts.
+
+    The finder counts are treated as the model mean in each bin. Empty model
+    bins are assigned a small positive floor so missing predicted bins receive
+    a finite, tunable penalty instead of making the likelihood undefined.
+    """
+
+    floor = _count_floor(count_floor)
+    predicted = np.asarray(predicted_counts, dtype=np.float64)
+    reference = np.asarray(reference_counts, dtype=np.float64)
+    if predicted.ndim != 1 or reference.ndim != 1 or predicted.shape != reference.shape:
+        raise CalibrationError("predicted_counts and reference_counts must be matching 1D arrays")
+    if (
+        not np.all(np.isfinite(predicted))
+        or not np.all(np.isfinite(reference))
+        or np.any(predicted < 0.0)
+        or np.any(reference < 0.0)
+    ):
+        raise CalibrationError("VSF counts must be non-negative and finite")
+
+    model_mean = np.maximum(predicted, floor)
+    terms = (
+        observed * math.log(expected) - expected - math.lgamma(observed + 1.0)
+        for observed, expected in zip(reference, model_mean, strict=True)
+    )
+    return float(math.fsum(terms))
+
+
+def _score_likelihood_from_radius_score(
+    radius_score: DirectionalRadiusCalibrationScore,
+    *,
+    count_floor: float,
+) -> DirectionalVsfLikelihoodScore:
+    comparison = radius_score.size_score.size_function
+    log_likelihood = poisson_vsf_log_likelihood(
+        predicted_counts=comparison.predicted.counts,
+        reference_counts=comparison.reference.counts,
+        count_floor=count_floor,
+    )
+    return DirectionalVsfLikelihoodScore(
+        target_label=radius_score.target_label,
+        radius_score=radius_score,
+        count_floor=float(count_floor),
+        log_likelihood=log_likelihood,
+        negative_log_likelihood=-log_likelihood,
+    )
+
+
+def score_vsf_likelihood_radii(
+    *,
+    target_label: str,
+    predicted_radii_mpc_h: ArrayLike,
+    reference_radii_mpc_h: ArrayLike,
+    box_size_mpc_h: float,
+    bins: int | ArrayLike,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+    count_floor: float = 0.5,
+    min_predicted_fraction: float = 0.25,
+) -> DirectionalVsfLikelihoodScore:
+    """Score binned VSF likelihood from predicted and reference radii."""
+
+    radius_score = score_radius_calibration_radii(
+        target_label=target_label,
+        predicted_radii_mpc_h=predicted_radii_mpc_h,
+        reference_radii_mpc_h=reference_radii_mpc_h,
+        box_size_mpc_h=box_size_mpc_h,
+        bins=bins,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+        min_predicted_fraction=min_predicted_fraction,
+    )
+    return _score_likelihood_from_radius_score(
+        radius_score,
+        count_floor=_count_floor(count_floor),
+    )
+
+
 def score_direction_radius_calibration(
     result: DirectionalVoidFinderResult,
     reference: VideVoidCatalog,
@@ -474,6 +589,46 @@ def score_paired_radius_calibration(
             score_a.in_bin_count_abs_error + score_b.in_bin_count_abs_error
         ),
         is_degenerate=score_a.is_degenerate or score_b.is_degenerate,
+    )
+
+
+def score_paired_vsf_likelihood(
+    result: PairedVoidFinderResult,
+    *,
+    reference_a: VideVoidCatalog,
+    reference_b: VideVoidCatalog,
+    box_size_mpc_h: float,
+    bins: int | ArrayLike,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+    config: PairedVoidFinderConfig,
+    linking_mode: Literal["fixed", "mean_spacing"] = "fixed",
+    linking_value: float | None = None,
+    source_a_linking_length_mpc_h: float | None = None,
+    source_b_linking_length_mpc_h: float | None = None,
+    count_floor: float = 0.5,
+    min_predicted_fraction: float = 0.25,
+) -> PairedVsfLikelihoodResult:
+    """Score a paired result by Poisson likelihood of binned VSF counts."""
+
+    radius_result = score_paired_radius_calibration(
+        result,
+        reference_a=reference_a,
+        reference_b=reference_b,
+        box_size_mpc_h=box_size_mpc_h,
+        bins=bins,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+        config=config,
+        linking_mode=linking_mode,
+        linking_value=linking_value,
+        source_a_linking_length_mpc_h=source_a_linking_length_mpc_h,
+        source_b_linking_length_mpc_h=source_b_linking_length_mpc_h,
+        min_predicted_fraction=min_predicted_fraction,
+    )
+    return _vsf_likelihood_from_radius_result(
+        radius_result,
+        count_floor=count_floor,
     )
 
 
@@ -607,6 +762,56 @@ def _sort_radius_calibration_results(
     )
 
 
+def _vsf_likelihood_from_radius_result(
+    radius_result: PairedRadiusCalibrationResult,
+    *,
+    count_floor: float,
+) -> PairedVsfLikelihoodResult:
+    floor = _count_floor(count_floor)
+    score_a = _score_likelihood_from_radius_score(
+        radius_result.score_a,
+        count_floor=floor,
+    )
+    score_b = _score_likelihood_from_radius_score(
+        radius_result.score_b,
+        count_floor=floor,
+    )
+    total_log_likelihood = score_a.log_likelihood + score_b.log_likelihood
+    return PairedVsfLikelihoodResult(
+        radius_result=radius_result,
+        score_a=score_a,
+        score_b=score_b,
+        count_floor=floor,
+        total_log_likelihood=total_log_likelihood,
+        total_negative_log_likelihood=-total_log_likelihood,
+    )
+
+
+def _sort_vsf_likelihood_results(
+    results: Iterable[PairedVsfLikelihoodResult],
+) -> tuple[PairedVsfLikelihoodResult, ...]:
+    return tuple(
+        sorted(
+            results,
+            key=lambda item: (
+                item.radius_result.is_degenerate,
+                item.total_negative_log_likelihood,
+                item.radius_result.total_density_l1_difference,
+                item.radius_result.total_median_radius_abs_error_mpc_h,
+                item.radius_result.total_in_bin_count_abs_error,
+                item.radius_result.total_count_l1_difference,
+                item.radius_result.linking_mode,
+                item.radius_result.linking_value,
+                item.radius_result.config.min_cluster_members,
+                item.radius_result.config.min_cluster_mass_msun_h,
+                item.radius_result.config.radius_a0,
+                item.radius_result.config.radius_alpha,
+                item.radius_result.config.adjacency_factor,
+            ),
+        )
+    )
+
+
 def sweep_radius_scale_parameters(
     catalog_a: HaloCatalog,
     catalog_b: HaloCatalog,
@@ -733,6 +938,56 @@ def sweep_radius_scale_parameters(
             )
 
     return _sort_radius_calibration_results(scored_results)
+
+
+def sweep_vsf_likelihood_parameters(
+    catalog_a: HaloCatalog,
+    catalog_b: HaloCatalog,
+    *,
+    reference_a: VideVoidCatalog,
+    reference_b: VideVoidCatalog,
+    reference_rho_bar_msun_h_mpc3: float,
+    linking_lengths_mpc_h: Iterable[float],
+    radius_a0_values: Iterable[float],
+    radius_alpha_values: Iterable[float],
+    adjacency_factors: Iterable[float],
+    bins: int | ArrayLike,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+    linking_length_mean_spacing_factors: Iterable[float] = (),
+    min_cluster_members_values: Iterable[int] = (2,),
+    min_cluster_mass_values_msun_h: Iterable[float] = (0.0,),
+    count_floor: float = 0.5,
+    min_predicted_fraction: float = 0.25,
+    max_source_clusters: int | None = None,
+) -> tuple[PairedVsfLikelihoodResult, ...]:
+    """Run a cached parameter grid ranked by binned VSF Poisson likelihood."""
+
+    floor = _count_floor(count_floor)
+    radius_results = sweep_radius_scale_parameters(
+        catalog_a,
+        catalog_b,
+        reference_a=reference_a,
+        reference_b=reference_b,
+        reference_rho_bar_msun_h_mpc3=reference_rho_bar_msun_h_mpc3,
+        linking_lengths_mpc_h=linking_lengths_mpc_h,
+        linking_length_mean_spacing_factors=linking_length_mean_spacing_factors,
+        min_cluster_members_values=min_cluster_members_values,
+        min_cluster_mass_values_msun_h=min_cluster_mass_values_msun_h,
+        radius_a0_values=radius_a0_values,
+        radius_alpha_values=radius_alpha_values,
+        adjacency_factors=adjacency_factors,
+        bins=bins,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+        min_predicted_fraction=min_predicted_fraction,
+        max_source_clusters=max_source_clusters,
+    )
+    likelihood_results = (
+        _vsf_likelihood_from_radius_result(result, count_floor=floor)
+        for result in radius_results
+    )
+    return _sort_vsf_likelihood_results(likelihood_results)
 
 
 def sweep_geometry_parameters(

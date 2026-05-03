@@ -22,9 +22,9 @@ RUNS = {
         "vide_b": "runs/vide-lowres/n128_pair/n128_paired/outputs/pinocchio_n128_paired_ss1.0/sample_pinocchio_n128_paired_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n128_paired_ss1.0_z0.00_d00.out",
         "cosmology": "runs/pinocchio-lowres/n128/pinocchio.lowres_n128.cosmology.out",
         "linking_factor": "0.15",
-        "radius_a0": "5.0",
-        "radius_alpha": "1.0",
-        "adjacency_factor": "0.50",
+        "radius_a0": "4.5",
+        "radius_alpha": "1.05",
+        "adjacency_factor": "0.40",
     },
     "n256": {
         "catalog_a": "runs/pinocchio-lowres/n256/pinocchio.0.0000.lowres_n256.catalog.out",
@@ -32,10 +32,10 @@ RUNS = {
         "vide_a": "runs/vide-lowres/n256/outputs/pinocchio_n256_ss1.0/sample_pinocchio_n256_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n256_ss1.0_z0.00_d00.out",
         "vide_b": "runs/vide-lowres/n256_paired/outputs/pinocchio_n256_paired_ss1.0/sample_pinocchio_n256_paired_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n256_paired_ss1.0_z0.00_d00.out",
         "cosmology": "runs/pinocchio-lowres/n256/pinocchio.lowres_n256.cosmology.out",
-        "linking_factor": "0.12",
-        "radius_a0": "6.0",
+        "linking_factor": "0.13",
+        "radius_a0": "6.5",
         "radius_alpha": "1.0",
-        "adjacency_factor": "0.35",
+        "adjacency_factor": "0.30",
     },
 }
 

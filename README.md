@@ -101,10 +101,10 @@ python scripts/compare_void_size_functions.py \
   runs/vide-lowres/n256_paired/outputs/pinocchio_n256_paired_ss1.0/sample_pinocchio_n256_paired_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n256_paired_ss1.0_z0.00_d00.out \
   --box-size 256 \
   --rho-bar 8.63025e10 \
-  --linking-factor 0.12 \
-  --radius-a0 6 \
+  --linking-factor 0.13 \
+  --radius-a0 6.5 \
   --radius-alpha 1 \
-  --adjacency-factor 0.35 \
+  --adjacency-factor 0.30 \
   --bins 17 \
   --binning linear \
   --bin-min 10 \
@@ -128,6 +128,33 @@ python scripts/calibrate_radius_scale.py \
   --min-cluster-members 2 \
   --min-cluster-mass 0 \
   --output-csv runs/void-statistics/n256_radius_scale_calibration.csv
+```
+
+Search the same parameter surface with the VSF likelihood objective. Rows are
+ranked by maximum Poisson log-likelihood of the fixed-bin VIDE counts, with
+non-degenerate finder rows kept ahead of zero/near-zero underpredictions:
+
+```bash
+python scripts/calibrate_vsf_likelihood.py \
+  runs/pinocchio-lowres/n256/pinocchio.0.0000.lowres_n256.catalog.out \
+  runs/pinocchio-lowres/n256_paired/pinocchio.0.0000.lowres_n256_paired.catalog.out \
+  runs/vide-lowres/n256/outputs/pinocchio_n256_ss1.0/sample_pinocchio_n256_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n256_ss1.0_z0.00_d00.out \
+  runs/vide-lowres/n256_paired/outputs/pinocchio_n256_paired_ss1.0/sample_pinocchio_n256_paired_ss1.0_z0.00_d00/voidDesc_all_pinocchio_n256_paired_ss1.0_z0.00_d00.out \
+  --box-size 256 \
+  --rho-bar 8.63025e10 \
+  --linking-factor 0.12 \
+  --linking-factor 0.13 \
+  --linking-factor 0.14 \
+  --min-cluster-members 2 \
+  --min-cluster-mass 0 \
+  --radius-a0 5.5 \
+  --radius-a0 6.0 \
+  --radius-a0 6.5 \
+  --radius-alpha 1.0 \
+  --radius-alpha 1.05 \
+  --adjacency-factor 0.3 \
+  --adjacency-factor 0.4 \
+  --output-csv runs/void-statistics/n256_vsf_likelihood_calibration.csv
 ```
 
 Regenerate the local ignored `n128` and `n256` finder-vs-VIDE plots. Add
@@ -176,6 +203,7 @@ design primitives and the first Milestone 3 algorithm slice:
 - finder-vs-VIDE per-bin void size-function comparison scripts;
 - fixed-bin VSF and radius-summary outputs for paper-style comparisons;
 - cached radius-scale calibration diagnostics for `n128`/`n256`;
+- cached Poisson likelihood searches for matching finder VSF counts to VIDE;
 - Vdn/SVdW theoretical void size-function overlays from PINOCCHIO cosmology
   tables;
 - documentation of the expected PINOCCHIO catalog columns.

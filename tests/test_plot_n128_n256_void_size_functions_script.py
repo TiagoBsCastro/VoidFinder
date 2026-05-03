@@ -16,13 +16,13 @@ def make_args(*, include_theory: bool) -> argparse.Namespace:
         include_theory=include_theory,
         output_dir=Path("runs/void-statistics"),
         n128_linking_factor="0.15",
-        n256_linking_factor="0.12",
-        n128_radius_a0="5.0",
-        n128_radius_alpha="1.0",
-        n128_adjacency_factor="0.50",
-        n256_radius_a0="6.0",
+        n256_linking_factor="0.13",
+        n128_radius_a0="4.5",
+        n128_radius_alpha="1.05",
+        n128_adjacency_factor="0.40",
+        n256_radius_a0="6.5",
         n256_radius_alpha="1.0",
-        n256_adjacency_factor="0.35",
+        n256_adjacency_factor="0.30",
     )
 
 
