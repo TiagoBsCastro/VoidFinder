@@ -107,6 +107,10 @@ Completed so far:
   merged radii, and tests use the same `R_eff` definition.
 - Regenerated local ignored `n128` and `n256` finder-vs-VIDE diagnostics in
   both shared automatic bins and paper-like `10-80 Mpc/h` bins.
+- Refreshed the canonical ignored VSF plot products in default no-theory mode:
+  `n128_finder_vide_vsf`, `n256_finder_vide_vsf`, `n128_paper_bins_vsf`, and
+  `n256_paper_bins_vsf`. These CSVs contain only `finder` and `vide` rows; the
+  separate `*_theory_vsf` products are generated only with `--include-theory`.
 - The first corrected paper-bin diagnostics showed that the old parameters put
   finder voids below the `10-80 Mpc/h` paper range; this was a calibration
   issue, not a plotting issue.
@@ -211,8 +215,8 @@ Planned:
      `adjacency_factor=0.2-0.5`.
    - Include `radius_alpha` values near `1.0` and inspect whether separate
      `n128`/`n256` parameters are required.
-   - Compare count totals, paper-bin VSF residuals, and radius percentiles as
-     separate diagnostics.
+   - Compare count totals, paper-bin VSF residuals, and radius percentiles in
+     default no-theory plots before adding optional theory overlays.
 
 2. Build a paper-comparison audit for the Lepinzan et al. PINOCCHIO/VIDE VSF.
    - Use the same `10-80 Mpc/h` linear binning for local plots.
@@ -238,6 +242,8 @@ Planned:
 4. Add a repeatable plot-refresh step to every new calibration candidate.
    - Run both default and paper-bin `scripts/plot_n128_n256_void_size_functions.py`
      outputs after changing finder parameters.
+   - Use no-theory plots as the default empirical comparison and reserve
+     `--include-theory` outputs for dedicated theory diagnostics.
    - Preserve generated products under ignored `runs/` paths.
    - Record only stable conclusions and commands in committed docs.
 
