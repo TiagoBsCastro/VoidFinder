@@ -46,7 +46,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--linking-factor",
         type=float,
         action="append",
-        help="Source halo mean-spacing factor to test. Defaults to the n128/n256 grid.",
+        help="Source halo mean-spacing factor to test. Defaults to the n256 grid.",
     )
     parser.add_argument(
         "--linking-length",

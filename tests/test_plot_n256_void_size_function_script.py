@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from scripts.plot_n128_n256_void_size_functions import _run_args
+from scripts.plot_n256_void_size_function import N256_RUN, _run_args
 
 
 def make_args(*, include_theory: bool) -> argparse.Namespace:
@@ -15,19 +15,15 @@ def make_args(*, include_theory: bool) -> argparse.Namespace:
         paper_bins=False,
         include_theory=include_theory,
         output_dir=Path("runs/void-statistics"),
-        n128_linking_factor="0.15",
-        n256_linking_factor="0.13",
-        n128_radius_a0="4.5",
-        n128_radius_alpha="1.05",
-        n128_adjacency_factor="0.40",
-        n256_radius_a0="6.5",
-        n256_radius_alpha="1.0",
-        n256_adjacency_factor="0.30",
+        linking_factor=N256_RUN["linking_factor"],
+        radius_a0=N256_RUN["radius_a0"],
+        radius_alpha=N256_RUN["radius_alpha"],
+        adjacency_factor=N256_RUN["adjacency_factor"],
     )
 
 
 def test_plot_driver_does_not_include_theory_by_default() -> None:
-    command = _run_args("n256", make_args(include_theory=False))
+    command = _run_args(make_args(include_theory=False))
 
     assert "--theory" not in command
     assert "--cosmology-file" not in command
@@ -35,7 +31,7 @@ def test_plot_driver_does_not_include_theory_by_default() -> None:
 
 
 def test_plot_driver_can_include_theory_overlay() -> None:
-    command = _run_args("n256", make_args(include_theory=True))
+    command = _run_args(make_args(include_theory=True))
 
     assert command[command.index("--theory") + 1] == "vdn-svdw"
     assert "--cosmology-file" in command

@@ -13,6 +13,7 @@ authors = [
   { name = "PINOCCHIO Voids contributors" }
 ]
 dependencies = [
+  "emcee",
   "numpy",
   "scipy",
   "pydantic",

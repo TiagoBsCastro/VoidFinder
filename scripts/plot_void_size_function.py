@@ -21,8 +21,8 @@ from pinocchio_voids.io import read_vide_void_desc
 from pinocchio_voids.theory import compute_vdn_svdw_size_function, read_pinocchio_cosmology
 
 
-DEFAULT_ROOT = Path("runs/vide-lowres/n128_pair")
-DEFAULT_PATTERN = "*/outputs/*/sample_*/voidDesc_all_*.out"
+DEFAULT_ROOT = Path("runs/vide-lowres")
+DEFAULT_PATTERN = "n256*/outputs/*/sample_*/voidDesc_all_*.out"
 
 
 def parse_args() -> argparse.Namespace:
@@ -77,13 +77,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("runs/vide-lowres/n128_pair/plots/void_size_function.png"),
+        default=Path("runs/void-statistics/n256_vide_target_vsf.png"),
         help="Output plot path.",
     )
     parser.add_argument(
         "--csv-output",
         type=Path,
-        default=Path("runs/vide-lowres/n128_pair/plots/void_size_function.csv"),
+        default=Path("runs/void-statistics/n256_vide_target_vsf.csv"),
         help="Output table path.",
     )
     parser.add_argument(
