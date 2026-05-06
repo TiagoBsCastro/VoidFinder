@@ -8,7 +8,9 @@ from pinocchio_voids.voidfinder import (
     ProtovoidCatalog,
     SourceCluster,
     SourceClusterCatalog,
+    bridge_density_score,
     build_protovoid_adjacency,
+    compatibility_score,
     find_source_clusters,
     merge_protovoids,
     protovoid_radius_from_mass,
@@ -53,6 +55,26 @@ def test_periodic_fof_clusters_across_box_boundary() -> None:
     assert cluster.total_mass_msun_h == pytest.approx(2.0)
     np.testing.assert_allclose(cluster.center_mpc_h, [0.0, 0.0, 0.0], atol=1.0e-12)
     assert cluster.effective_radius_mpc_h == pytest.approx(0.1)
+    assert cluster.shape_tensor_mpc_h2.shape == (3, 3)
+    assert cluster.axis_ratio >= 1.0
+    assert cluster.max_member_distance_mpc_h == pytest.approx(0.1)
+    assert cluster.rms_radius_over_linking_length == pytest.approx(0.1 / 0.3)
+
+
+def test_source_cluster_quality_cuts_filter_extended_clusters() -> None:
+    catalog = make_halo_catalog(
+        [[1.0, 0.0, 0.0], [1.2, 0.0, 0.0], [1.4, 0.0, 0.0]],
+        [1.0, 1.0, 1.0],
+    )
+
+    clusters = find_source_clusters(
+        catalog,
+        linking_length_mpc_h=0.3,
+        min_cluster_members=2,
+        max_cluster_axis_ratio=2.0,
+    )
+
+    assert len(clusters) == 0
 
 
 def test_source_clusters_map_to_spherical_protovoids() -> None:
@@ -118,6 +140,96 @@ def test_graph_adjacency_and_connected_component_merging() -> None:
     assert merged.total_source_mass_msun_h == pytest.approx(3.0)
     assert merged.effective_radius_mpc_h == pytest.approx((2.0 * 0.3**3) ** (1.0 / 3.0))
     np.testing.assert_allclose(merged.center_mpc_h, [0.0, 0.0, 0.0], atol=1.0e-12)
+    assert len(final_voids.voids[0].member_protovoid_ids) == 2
+
+
+def test_weighted_merge_threshold_blocks_weak_adjacency() -> None:
+    protovoids = ProtovoidCatalog(
+        (
+            Protovoid(0, 10, [0.0, 0.0, 0.0], 1.0, 1.0),
+            Protovoid(1, 11, [1.8, 0.0, 0.0], 1.0, 1.0),
+        ),
+        box_size_mpc_h=10.0,
+        target_label="A",
+    )
+
+    edges = build_protovoid_adjacency(
+        protovoids,
+        adjacency_factor=1.0,
+        merge_score_mode="weighted",
+        geom_weight=1.0,
+        merge_threshold=0.5,
+    )
+    final_voids = merge_protovoids(protovoids, edges)
+
+    assert len(edges) == 1
+    assert edges[0].geometric_score == pytest.approx(0.1)
+    assert edges[0].merge_score == pytest.approx(0.1)
+    assert edges[0].passes_merge_threshold is False
+    assert len(final_voids) == 2
+
+
+def test_bridge_density_score_can_promote_weighted_merge() -> None:
+    source_catalog = make_halo_catalog(
+        [[0.0, 0.0, 0.0], [4.0, 0.0, 0.0], [2.0, 0.0, 0.0]],
+        [1.0, 1.0, 100.0],
+    )
+    source_clusters = SourceClusterCatalog(
+        (
+            SourceCluster(0, [0], 1.0, [0.0, 0.0, 0.0], 1, 0.0),
+            SourceCluster(1, [1], 1.0, [4.0, 0.0, 0.0], 1, 0.0),
+        ),
+        box_size_mpc_h=10.0,
+        source_label="A",
+    )
+    protovoids = ProtovoidCatalog(
+        (
+            Protovoid(0, 0, [0.0, 0.0, 0.0], 2.1, 1.0),
+            Protovoid(1, 1, [4.0, 0.0, 0.0], 2.1, 1.0),
+        ),
+        box_size_mpc_h=10.0,
+        target_label="B",
+    )
+
+    bridge = bridge_density_score(
+        source_catalog,
+        source_clusters.clusters[0],
+        source_clusters.clusters[1],
+        bridge_radius_factor=1.0,
+        bridge_min_radius_mpc_h=0.2,
+        bridge_density_mode="mass",
+    )
+    edges = build_protovoid_adjacency(
+        protovoids,
+        adjacency_factor=1.0,
+        source_catalog=source_catalog,
+        source_clusters=source_clusters,
+        merge_score_mode="weighted",
+        geom_weight=0.0,
+        bridge_weight=1.0,
+        merge_threshold=0.5,
+        bridge_radius_factor=1.0,
+        bridge_min_radius_mpc_h=0.2,
+    )
+    final_voids = merge_protovoids(protovoids, edges, source_clusters=source_clusters)
+
+    assert bridge > 0.5
+    assert edges[0].bridge_score == pytest.approx(bridge)
+    assert edges[0].passes_merge_threshold is True
+    assert len(final_voids) == 1
+    assert final_voids.voids[0].mean_merge_score == pytest.approx(edges[0].merge_score)
+    assert final_voids.voids[0].total_source_richness == 2
+
+
+def test_compatibility_score_uses_radius_and_richness_similarity() -> None:
+    score = compatibility_score(
+        Protovoid(0, 0, [0.0, 0.0, 0.0], 2.0, 1.0),
+        Protovoid(1, 1, [1.0, 0.0, 0.0], 4.0, 1.0),
+        SourceCluster(0, [0, 1], 1.0, [0.0, 0.0, 0.0], 2, 0.0),
+        SourceCluster(1, [2, 3, 4, 5], 1.0, [1.0, 0.0, 0.0], 4, 0.0),
+    )
+
+    assert score == pytest.approx(0.7 * 0.5 + 0.3 * 0.5)
 
 
 def test_paired_pipeline_runs_symmetrically_on_tiny_catalogs() -> None:

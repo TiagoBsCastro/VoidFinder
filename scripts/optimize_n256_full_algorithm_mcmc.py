@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Sample the n256 VSF calibration posterior with emcee."""
+"""Sample the n256 full scored-merge calibration posterior with emcee."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from numpy.typing import NDArray
 
 from pinocchio_voids.calibration import (
     mean_halo_spacing_mpc_h,
-    score_paired_vsf_likelihood,
+    score_paired_joint_calibration,
 )
 from pinocchio_voids.io import (
     VIDE_CATALOG_VARIANTS,
@@ -28,51 +28,114 @@ from pinocchio_voids.io import (
 )
 from pinocchio_voids.voidfinder import PairedVoidFinderConfig, run_paired_halo_void_finder
 
+try:
+    from scripts.optimize_n256_joint_calibration_mcmc import (
+        BLOB_NAMES,
+        DEFAULT_CATALOG_A,
+        DEFAULT_CATALOG_B,
+        DEFAULT_VIDE_A,
+        DEFAULT_VIDE_B,
+        _blob_from_score,
+        _invalid_blob,
+        flatten_blobs,
+    )
+    from scripts.optimize_n256_vsf_mcmc import (
+        credible_density_levels,
+        fixed_linear_edges,
+        flatten_chain,
+    )
+    from scripts.plot_n256_void_slice import (
+        DEFAULT_VIDE_CENTERS_A,
+        DEFAULT_VIDE_CENTERS_B,
+        DEFAULT_VIDE_MACROCENTERS_A,
+        DEFAULT_VIDE_MACROCENTERS_B,
+        load_vide_spatial_catalog,
+    )
+except ModuleNotFoundError as exc:
+    if exc.name != "scripts":
+        raise
+    from optimize_n256_joint_calibration_mcmc import (
+        BLOB_NAMES,
+        DEFAULT_CATALOG_A,
+        DEFAULT_CATALOG_B,
+        DEFAULT_VIDE_A,
+        DEFAULT_VIDE_B,
+        _blob_from_score,
+        _invalid_blob,
+        flatten_blobs,
+    )
+    from optimize_n256_vsf_mcmc import (
+        credible_density_levels,
+        fixed_linear_edges,
+        flatten_chain,
+    )
+    from plot_n256_void_slice import (
+        DEFAULT_VIDE_CENTERS_A,
+        DEFAULT_VIDE_CENTERS_B,
+        DEFAULT_VIDE_MACROCENTERS_A,
+        DEFAULT_VIDE_MACROCENTERS_B,
+        load_vide_spatial_catalog,
+    )
 
-PARAMETER_NAMES = ("linking_factor", "radius_a0", "radius_alpha", "adjacency_factor")
+
+PARAMETER_NAMES = (
+    "linking_factor",
+    "radius_a0",
+    "radius_alpha",
+    "adjacency_factor",
+    "merge_threshold",
+    "bridge_radius_factor",
+    "bridge_weight",
+    "compatibility_weight",
+)
 DEFAULT_BOUNDS = np.array(
     [
         [0.10, 0.17],
         [4.0, 8.0],
         [0.85, 1.20],
         [0.15, 0.70],
+        [0.0, 3.0],
+        [0.1, 2.0],
+        [0.0, 3.0],
+        [0.0, 3.0],
     ],
     dtype=np.float64,
 )
-DEFAULT_INITIAL_CENTER = np.array([0.13, 5.5, 1.05, 0.40], dtype=np.float64)
-DEFAULT_CATALOG_A = Path(
-    "runs/pinocchio-lowres/n256/pinocchio.0.0000.lowres_n256.catalog.out"
+DEFAULT_INITIAL_CENTER = np.array(
+    [
+        0.14605092780899798,
+        6.14700029037185,
+        0.9313222316465706,
+        0.5240470713979322,
+        0.5,
+        0.5,
+        1.0,
+        0.25,
+    ],
+    dtype=np.float64,
 )
-DEFAULT_CATALOG_B = Path(
-    "runs/pinocchio-lowres/n256_paired/pinocchio.0.0000.lowres_n256_paired.catalog.out"
-)
-DEFAULT_VIDE_A = Path(
-    "runs/vide-lowres/n256/outputs/pinocchio_n256_ss1.0/"
-    "sample_pinocchio_n256_ss1.0_z0.00_d00/"
-    "voidDesc_all_pinocchio_n256_ss1.0_z0.00_d00.out"
-)
-DEFAULT_VIDE_B = Path(
-    "runs/vide-lowres/n256_paired/outputs/pinocchio_n256_paired_ss1.0/"
-    "sample_pinocchio_n256_paired_ss1.0_z0.00_d00/"
-    "voidDesc_all_pinocchio_n256_paired_ss1.0_z0.00_d00.out"
-)
-DEFAULT_OUTPUT_PREFIX = Path("runs/void-statistics/n256_vsf_mcmc")
+DEFAULT_OUTPUT_PREFIX = Path("runs/void-statistics/n256_full_mcmc")
+BLOB_DTYPE = [(name, "f8") for name in BLOB_NAMES]
 
 
 @dataclass(frozen=True)
-class N256McmcPaths:
-    """Input catalogs for the n256 optimizer."""
+class N256FullMcmcPaths:
+    """Input catalogs for the n256 full-algorithm optimizer."""
 
     catalog_a: Path = DEFAULT_CATALOG_A
     catalog_b: Path = DEFAULT_CATALOG_B
     vide_a: Path = DEFAULT_VIDE_A
     vide_b: Path = DEFAULT_VIDE_B
+    vide_centers_a: Path = DEFAULT_VIDE_CENTERS_A
+    vide_centers_b: Path = DEFAULT_VIDE_CENTERS_B
+    vide_macrocenters_a: Path = DEFAULT_VIDE_MACROCENTERS_A
+    vide_macrocenters_b: Path = DEFAULT_VIDE_MACROCENTERS_B
     vide_variant: str = "all"
 
 
 @dataclass(frozen=True)
-class VsfMcmcSettings:
-    """Fixed VSF calibration settings for one MCMC run."""
+class FullMcmcSettings:
+    """Fixed full-algorithm calibration settings for one MCMC run."""
 
     box_size_mpc_h: float = 256.0
     reference_rho_bar_msun_h_mpc3: float = 8.63025e10
@@ -84,27 +147,28 @@ class VsfMcmcSettings:
     min_cluster_members: int = 2
     min_cluster_mass_msun_h: float = 0.0
     reject_degenerate: bool = True
-
-
-def fixed_linear_edges(*, bins: int, lower: float, upper: float) -> NDArray[np.float64]:
-    """Return fixed linear radius-bin edges."""
-
-    if bins < 1:
-        raise ValueError("bins must be at least 1")
-    if not np.isfinite(lower) or not np.isfinite(upper) or lower <= 0.0 or upper <= lower:
-        raise ValueError("radius bin edges must be positive, finite, and increasing")
-    return np.linspace(float(lower), float(upper), int(bins) + 1)
+    vsf_weight: float = 1.0
+    center_weight: float = 1.0
+    center_sigma: float = 1.0
+    center_nu: float = 3.0
+    center_radius_min_mpc_h: float | None = None
+    center_radius_max_mpc_h: float | None = None
+    vide_center_kind: str = "center"
+    geom_weight: float = 1.0
+    bridge_min_radius_mpc_h: float = 0.0
+    bridge_delta_scale: float = 1.0
+    bridge_density_mode: str = "mass"
 
 
 def log_uniform_prior(theta: Sequence[float], bounds: NDArray[np.float64]) -> float:
-    """Uniform prior over finite parameter bounds."""
+    """Uniform prior over finite full-algorithm parameter bounds."""
 
     values = np.asarray(theta, dtype=np.float64)
     limits = np.asarray(bounds, dtype=np.float64)
     if values.shape != (len(PARAMETER_NAMES),):
         return -np.inf
     if limits.shape != (len(PARAMETER_NAMES), 2):
-        raise ValueError("bounds must have shape (4, 2)")
+        raise ValueError("bounds must have shape (8, 2)")
     if not np.all(np.isfinite(values)) or not np.all(np.isfinite(limits)):
         return -np.inf
     if np.any(limits[:, 0] >= limits[:, 1]):
@@ -146,99 +210,6 @@ def initial_walker_positions(
     return positions
 
 
-class N256VsfLogPosterior:
-    """Callable posterior for the n256 paired VSF calibration."""
-
-    def __init__(
-        self,
-        *,
-        paths: N256McmcPaths,
-        settings: VsfMcmcSettings,
-        bounds: NDArray[np.float64],
-    ) -> None:
-        self.paths = paths
-        self.settings = settings
-        self.bounds = np.asarray(bounds, dtype=np.float64)
-        self.paired = read_paired_pinocchio_halo_catalogs(
-            paths.catalog_a,
-            paths.catalog_b,
-            box_size_mpc_h=settings.box_size_mpc_h,
-        )
-        self.reference_a = read_vide_void_desc(paths.vide_a)
-        self.reference_b = read_vide_void_desc(paths.vide_b)
-        self.bin_edges = fixed_linear_edges(
-            bins=settings.bins,
-            lower=settings.bin_min_mpc_h,
-            upper=settings.bin_max_mpc_h,
-        )
-        self.mean_spacing_a = mean_halo_spacing_mpc_h(self.paired.catalog_a)
-        self.mean_spacing_b = mean_halo_spacing_mpc_h(self.paired.catalog_b)
-
-    def __call__(self, theta: Sequence[float]) -> float:
-        prior = log_uniform_prior(theta, self.bounds)
-        if not np.isfinite(prior):
-            return -np.inf
-
-        linking_factor, radius_a0, radius_alpha, adjacency_factor = (
-            float(value) for value in theta
-        )
-        config = PairedVoidFinderConfig(
-            linking_length_mpc_h=linking_factor * self.mean_spacing_a,
-            source_b_linking_length_mpc_h=linking_factor * self.mean_spacing_b,
-            min_cluster_members=self.settings.min_cluster_members,
-            min_cluster_mass_msun_h=self.settings.min_cluster_mass_msun_h,
-            reference_rho_bar_msun_h_mpc3=self.settings.reference_rho_bar_msun_h_mpc3,
-            radius_a0=radius_a0,
-            radius_alpha=radius_alpha,
-            adjacency_factor=adjacency_factor,
-        )
-        result = run_paired_halo_void_finder(
-            self.paired.catalog_a,
-            self.paired.catalog_b,
-            config=config,
-        )
-        score = score_paired_vsf_likelihood(
-            result,
-            reference_a=self.reference_a,
-            reference_b=self.reference_b,
-            box_size_mpc_h=self.settings.box_size_mpc_h,
-            bins=self.bin_edges,
-            radius_min_mpc_h=self.settings.bin_min_mpc_h,
-            radius_max_mpc_h=self.settings.bin_max_mpc_h,
-            config=config,
-            linking_mode="mean_spacing",
-            linking_value=linking_factor,
-            source_a_linking_length_mpc_h=config.linking_length_mpc_h,
-            source_b_linking_length_mpc_h=config.source_b_linking_length_mpc_h,
-            count_floor=self.settings.count_floor,
-            min_predicted_fraction=self.settings.min_predicted_fraction,
-        )
-        if self.settings.reject_degenerate and score.radius_result.is_degenerate:
-            return -np.inf
-        return prior + score.total_log_likelihood
-
-
-def flatten_chain(
-    chain: NDArray[np.float64],
-    log_probability: NDArray[np.float64],
-    *,
-    burn_in: int,
-    thin: int,
-) -> tuple[NDArray[np.float64], NDArray[np.float64]]:
-    """Return post-burn-in flattened samples and log probabilities."""
-
-    if thin < 1:
-        raise ValueError("thin must be at least 1")
-    if burn_in < 0 or burn_in >= chain.shape[0]:
-        raise ValueError("burn_in must be non-negative and smaller than the chain length")
-    thinned_chain = chain[burn_in::thin]
-    thinned_log_probability = log_probability[burn_in::thin]
-    return (
-        thinned_chain.reshape((-1, chain.shape[-1])),
-        thinned_log_probability.reshape(-1),
-    )
-
-
 def summarize_samples(
     samples: NDArray[np.float64],
     log_probability: NDArray[np.float64],
@@ -246,7 +217,7 @@ def summarize_samples(
     """Return best-fit vector, best log probability, and 16/50/84 percentiles."""
 
     if samples.ndim != 2 or samples.shape[1] != len(PARAMETER_NAMES):
-        raise ValueError("samples must have shape (n, 4)")
+        raise ValueError("samples must have shape (n, 8)")
     if log_probability.ndim != 1 or log_probability.shape[0] != samples.shape[0]:
         raise ValueError("log_probability must match sample count")
     finite = np.isfinite(log_probability)
@@ -263,38 +234,146 @@ def summarize_samples(
     )
 
 
-def credible_density_levels(
-    density: NDArray[np.float64],
-    masses: Sequence[float] = (0.95, 0.68),
-) -> list[float]:
-    """Return ascending density thresholds enclosing the requested masses."""
+class N256FullLogPosterior:
+    """Callable posterior for full scored-merge n256 paired calibration."""
 
-    values = np.asarray(density, dtype=np.float64)
-    if values.ndim != 2 or not np.any(values > 0.0):
-        return []
-    flattened = np.sort(values.ravel())[::-1]
-    cumulative = np.cumsum(flattened)
-    cumulative /= cumulative[-1]
-    levels = []
-    for mass in masses:
-        if not np.isfinite(mass) or mass <= 0.0 or mass >= 1.0:
-            raise ValueError("credible masses must be between 0 and 1")
-        index = min(int(np.searchsorted(cumulative, mass, side="left")), flattened.size - 1)
-        levels.append(float(flattened[index]))
-    return sorted(set(levels))
+    def __init__(
+        self,
+        *,
+        paths: N256FullMcmcPaths,
+        settings: FullMcmcSettings,
+        bounds: NDArray[np.float64],
+    ) -> None:
+        self.paths = paths
+        self.settings = settings
+        self.bounds = np.asarray(bounds, dtype=np.float64)
+        self.paired = read_paired_pinocchio_halo_catalogs(
+            paths.catalog_a,
+            paths.catalog_b,
+            box_size_mpc_h=settings.box_size_mpc_h,
+        )
+        self.reference_a = read_vide_void_desc(paths.vide_a)
+        self.reference_b = read_vide_void_desc(paths.vide_b)
+        self.spatial_a = load_vide_spatial_catalog(
+            desc_path=paths.vide_a,
+            centers_path=paths.vide_centers_a,
+            macrocenters_path=paths.vide_macrocenters_a,
+            center_kind=settings.vide_center_kind,
+        )
+        self.spatial_b = load_vide_spatial_catalog(
+            desc_path=paths.vide_b,
+            centers_path=paths.vide_centers_b,
+            macrocenters_path=paths.vide_macrocenters_b,
+            center_kind=settings.vide_center_kind,
+        )
+        self.bin_edges = fixed_linear_edges(
+            bins=settings.bins,
+            lower=settings.bin_min_mpc_h,
+            upper=settings.bin_max_mpc_h,
+        )
+        self.mean_spacing_a = mean_halo_spacing_mpc_h(self.paired.catalog_a)
+        self.mean_spacing_b = mean_halo_spacing_mpc_h(self.paired.catalog_b)
+
+    def evaluate(self, theta: Sequence[float]) -> tuple[float, tuple[float, ...]]:
+        prior = log_uniform_prior(theta, self.bounds)
+        if not np.isfinite(prior):
+            return -np.inf, _invalid_blob(prior)
+
+        (
+            linking_factor,
+            radius_a0,
+            radius_alpha,
+            adjacency_factor,
+            merge_threshold,
+            bridge_radius_factor,
+            bridge_weight,
+            compatibility_weight,
+        ) = (float(value) for value in theta)
+        config = PairedVoidFinderConfig(
+            linking_length_mpc_h=linking_factor * self.mean_spacing_a,
+            source_b_linking_length_mpc_h=linking_factor * self.mean_spacing_b,
+            min_cluster_members=self.settings.min_cluster_members,
+            min_cluster_mass_msun_h=self.settings.min_cluster_mass_msun_h,
+            reference_rho_bar_msun_h_mpc3=self.settings.reference_rho_bar_msun_h_mpc3,
+            radius_a0=radius_a0,
+            radius_alpha=radius_alpha,
+            adjacency_factor=adjacency_factor,
+            merge_score_mode="weighted",
+            merge_threshold=merge_threshold,
+            geom_weight=self.settings.geom_weight,
+            bridge_weight=bridge_weight,
+            compatibility_weight=compatibility_weight,
+            bridge_radius_factor=bridge_radius_factor,
+            bridge_min_radius_mpc_h=self.settings.bridge_min_radius_mpc_h,
+            bridge_delta_scale=self.settings.bridge_delta_scale,
+            bridge_density_mode=self.settings.bridge_density_mode,
+        )
+        result = run_paired_halo_void_finder(
+            self.paired.catalog_a,
+            self.paired.catalog_b,
+            config=config,
+        )
+        center_min = (
+            self.settings.bin_min_mpc_h
+            if self.settings.center_radius_min_mpc_h is None
+            else self.settings.center_radius_min_mpc_h
+        )
+        center_max = (
+            self.settings.bin_max_mpc_h
+            if self.settings.center_radius_max_mpc_h is None
+            else self.settings.center_radius_max_mpc_h
+        )
+        score = score_paired_joint_calibration(
+            result,
+            reference_a=self.reference_a,
+            reference_b=self.reference_b,
+            reference_positions_a_mpc_h=self.spatial_a.positions_mpc_h,
+            reference_radii_a_mpc_h=self.spatial_a.radii_mpc_h,
+            reference_positions_b_mpc_h=self.spatial_b.positions_mpc_h,
+            reference_radii_b_mpc_h=self.spatial_b.radii_mpc_h,
+            box_size_mpc_h=self.settings.box_size_mpc_h,
+            bins=self.bin_edges,
+            radius_min_mpc_h=self.settings.bin_min_mpc_h,
+            radius_max_mpc_h=self.settings.bin_max_mpc_h,
+            config=config,
+            linking_mode="mean_spacing",
+            linking_value=linking_factor,
+            source_a_linking_length_mpc_h=config.linking_length_mpc_h,
+            source_b_linking_length_mpc_h=config.source_b_linking_length_mpc_h,
+            count_floor=self.settings.count_floor,
+            min_predicted_fraction=self.settings.min_predicted_fraction,
+            center_radius_min_mpc_h=center_min,
+            center_radius_max_mpc_h=center_max,
+            center_sigma=self.settings.center_sigma,
+            center_nu=self.settings.center_nu,
+            vsf_weight=self.settings.vsf_weight,
+            center_weight=self.settings.center_weight,
+        )
+        blob = _blob_from_score(log_prior=prior, score=score)
+        if self.settings.reject_degenerate and score.is_degenerate:
+            return -np.inf, blob
+        return prior + score.total_log_likelihood, blob
+
+    def __call__(self, theta: Sequence[float]) -> tuple[float, ...]:
+        value, blob = self.evaluate(theta)
+        return (value, *blob)
 
 
 def write_samples_csv(
     path: Path,
     samples: NDArray[np.float64],
     log_probability: NDArray[np.float64],
+    blobs: NDArray,
 ) -> None:
     rows = []
-    for index, (sample, log_prob) in enumerate(zip(samples, log_probability, strict=True)):
+    for index, (sample, log_prob, blob) in enumerate(
+        zip(samples, log_probability, blobs, strict=True)
+    ):
         row: dict[str, object] = {"sample": index, "log_probability": float(log_prob)}
         row.update(
             {name: float(value) for name, value in zip(PARAMETER_NAMES, sample, strict=True)}
         )
+        row.update({name: float(blob[name]) for name in BLOB_NAMES})
         rows.append(row)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
@@ -308,20 +387,21 @@ def write_summary_csv(
     *,
     best_fit: NDArray[np.float64],
     best_log_probability: float,
+    best_blob,
     percentiles: NDArray[np.float64],
 ) -> None:
     rows = []
     for column, name in enumerate(PARAMETER_NAMES):
-        rows.append(
-            {
-                "parameter": name,
-                "best_fit": float(best_fit[column]),
-                "p16": float(percentiles[0, column]),
-                "p50": float(percentiles[1, column]),
-                "p84": float(percentiles[2, column]),
-                "best_log_probability": float(best_log_probability),
-            }
-        )
+        row = {
+            "parameter": name,
+            "best_fit": float(best_fit[column]),
+            "p16": float(percentiles[0, column]),
+            "p50": float(percentiles[1, column]),
+            "p84": float(percentiles[2, column]),
+            "best_log_probability": float(best_log_probability),
+        }
+        row.update({f"best_{blob_name}": float(best_blob[blob_name]) for blob_name in BLOB_NAMES})
+        rows.append(row)
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
@@ -329,10 +409,7 @@ def write_summary_csv(
         writer.writerows(rows)
 
 
-def write_trace_plot(
-    path: Path,
-    chain: NDArray[np.float64],
-) -> None:
+def write_trace_plot(path: Path, chain: NDArray[np.float64]) -> None:
     os.environ.setdefault("MPLCONFIGDIR", str(Path(tempfile.gettempdir()) / "matplotlib"))
     import matplotlib
 
@@ -343,7 +420,7 @@ def write_trace_plot(
     fig, axes = plt.subplots(
         len(PARAMETER_NAMES),
         1,
-        figsize=(8.0, 7.5),
+        figsize=(9.0, 11.0),
         sharex=True,
         constrained_layout=True,
     )
@@ -372,7 +449,7 @@ def write_contour_plot(
     fig, axes = plt.subplots(
         ndim,
         ndim,
-        figsize=(9.0, 9.0),
+        figsize=(13.0, 13.0),
         constrained_layout=True,
     )
     for row in range(ndim):
@@ -424,16 +501,40 @@ def write_contour_plot(
     plt.close(fig)
 
 
+def _full_parameter_flags(best_fit: NDArray[np.float64]) -> str:
+    (
+        linking_factor,
+        radius_a0,
+        radius_alpha,
+        adjacency_factor,
+        merge_threshold,
+        bridge_radius_factor,
+        bridge_weight,
+        compatibility_weight,
+    ) = (float(value) for value in best_fit)
+    return f"""  --linking-factor {linking_factor:.8g} \\
+  --radius-a0 {radius_a0:.8g} \\
+  --radius-alpha {radius_alpha:.8g} \\
+  --adjacency-factor {adjacency_factor:.8g} \\
+  --merge-score-mode weighted \\
+  --merge-threshold {merge_threshold:.8g} \\
+  --bridge-radius-factor {bridge_radius_factor:.8g} \\
+  --bridge-weight {bridge_weight:.8g} \\
+  --compatibility-weight {compatibility_weight:.8g} \\
+  --bridge-min-radius 0 \\
+  --bridge-delta-scale 1 \\
+  --bridge-density-mode mass"""
+
+
 def write_best_fit_command(
     path: Path,
     *,
     best_fit: NDArray[np.float64],
-    paths: N256McmcPaths,
+    vide_center_kind: str,
+    paths: N256FullMcmcPaths,
 ) -> None:
-    linking_factor, radius_a0, radius_alpha, adjacency_factor = (
-        float(value) for value in best_fit
-    )
     suffix = vide_catalog_variant_output_suffix(paths.vide_variant)
+    flags = _full_parameter_flags(best_fit)
     command = f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -444,19 +545,38 @@ set -euo pipefail
   {paths.vide_b} \\
   --box-size 256 \\
   --rho-bar 8.63025e10 \\
-  --linking-factor {linking_factor:.8g} \\
+{flags} \\
   --min-cluster-members 2 \\
   --min-cluster-mass 0 \\
-  --radius-a0 {radius_a0:.8g} \\
-  --radius-alpha {radius_alpha:.8g} \\
-  --adjacency-factor {adjacency_factor:.8g} \\
   --bins 17 \\
   --binning linear \\
   --bin-min 10 \\
   --bin-max 80 \\
-  --output-csv runs/void-statistics/n256_mcmc_best_fit_paper_bins_vsf{suffix}.csv \\
-  --summary-csv runs/void-statistics/n256_mcmc_best_fit_paper_bins_vsf{suffix}_summary.csv \\
-  --output-plot runs/void-statistics/n256_mcmc_best_fit_paper_bins_vsf{suffix}.png
+  --label n256-full-scored-merge \\
+  --output-csv runs/void-statistics/n256_full_best_fit_paper_bins_vsf{suffix}.csv \\
+  --summary-csv runs/void-statistics/n256_full_best_fit_paper_bins_vsf{suffix}_summary.csv \\
+  --output-plot runs/void-statistics/n256_full_best_fit_paper_bins_vsf{suffix}.png
+
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/match_n256_void_centers.py \\
+  --vide-desc-a {paths.vide_a} \\
+  --vide-desc-b {paths.vide_b} \\
+  --vide-centers-a {paths.vide_centers_a} \\
+  --vide-centers-b {paths.vide_centers_b} \\
+  --vide-macrocenters-a {paths.vide_macrocenters_a} \\
+  --vide-macrocenters-b {paths.vide_macrocenters_b} \\
+  --vide-variant {paths.vide_variant} \\
+{flags} \\
+  --vide-center-kind {vide_center_kind} \\
+  --output-csv runs/void-statistics/n256_full_best_fit_center_matches{suffix}.csv \\
+  --summary-csv runs/void-statistics/n256_full_best_fit_center_match_summary{suffix}.csv
+
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n256_halo_void_slice.py \\
+  --vide-variant {paths.vide_variant} \\
+{flags} \\
+  --slice-axis z \\
+  --slice-center 128 \\
+  --slice-thickness 20 \\
+  --output-prefix n256_full_best_fit_halo_slice{suffix}
 """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(command, encoding="utf-8")
@@ -474,36 +594,50 @@ def _parse_vector(values: Sequence[float] | None, default: NDArray[np.float64]) 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run emcee posterior sampling for the n256 paired VSF calibration."
+        description="Run emcee sampling for full n256 scored-merge calibration."
     )
     parser.add_argument("--catalog-a", type=Path, default=DEFAULT_CATALOG_A)
     parser.add_argument("--catalog-b", type=Path, default=DEFAULT_CATALOG_B)
     parser.add_argument("--vide-a", type=Path, default=DEFAULT_VIDE_A)
     parser.add_argument("--vide-b", type=Path, default=DEFAULT_VIDE_B)
+    parser.add_argument("--vide-centers-a", type=Path, default=DEFAULT_VIDE_CENTERS_A)
+    parser.add_argument("--vide-centers-b", type=Path, default=DEFAULT_VIDE_CENTERS_B)
+    parser.add_argument("--vide-macrocenters-a", type=Path, default=DEFAULT_VIDE_MACROCENTERS_A)
+    parser.add_argument("--vide-macrocenters-b", type=Path, default=DEFAULT_VIDE_MACROCENTERS_B)
     parser.add_argument(
         "--vide-variant",
         choices=VIDE_CATALOG_VARIANTS,
         default="all",
         help="VIDE catalog variant used for calibration.",
     )
-    parser.add_argument("--walkers", type=int, default=32)
-    parser.add_argument("--steps", type=int, default=2000)
-    parser.add_argument("--burn-in", type=int, default=500)
+    parser.add_argument(
+        "--vide-center-kind",
+        choices=("center", "macrocenter"),
+        default="center",
+    )
+    parser.add_argument("--walkers", type=int, default=64)
+    parser.add_argument("--steps", type=int, default=3000)
+    parser.add_argument("--burn-in", type=int, default=750)
     parser.add_argument("--thin", type=int, default=10)
     parser.add_argument("--processes", type=int, default=1)
     parser.add_argument("--seed", type=int, default=12345)
+    parser.add_argument("--vsf-weight", type=float, default=1.0)
+    parser.add_argument("--center-weight", type=float, default=1.0)
+    parser.add_argument("--center-sigma", type=float, default=1.0)
+    parser.add_argument("--center-nu", type=float, default=3.0)
+    parser.add_argument("--center-radius-min", type=float)
+    parser.add_argument("--center-radius-max", type=float)
     parser.add_argument(
         "--initial-center",
         type=float,
         nargs=len(PARAMETER_NAMES),
         metavar=tuple(name.upper() for name in PARAMETER_NAMES),
-        help="Initial center: linking_factor radius_a0 radius_alpha adjacency_factor.",
+        help=(
+            "Initial center: linking_factor radius_a0 radius_alpha adjacency_factor "
+            "merge_threshold bridge_radius_factor bridge_weight compatibility_weight."
+        ),
     )
-    parser.add_argument(
-        "--output-prefix",
-        type=Path,
-        default=DEFAULT_OUTPUT_PREFIX,
-    )
+    parser.add_argument("--output-prefix", type=Path, default=DEFAULT_OUTPUT_PREFIX)
     parser.add_argument(
         "--allow-degenerate",
         action="store_true",
@@ -532,12 +666,23 @@ def run_sampler(
     walkers, ndim = initial_positions.shape
     if processes > 1:
         with Pool(processes=processes) as pool:
-            sampler = emcee.EnsembleSampler(walkers, ndim, log_probability, pool=pool)
+            sampler = emcee.EnsembleSampler(
+                walkers,
+                ndim,
+                log_probability,
+                pool=pool,
+                blobs_dtype=BLOB_DTYPE,
+            )
             sampler.run_mcmc(initial_positions, steps, progress=True)
-            return sampler.get_chain(), sampler.get_log_prob()
-    sampler = emcee.EnsembleSampler(walkers, ndim, log_probability)
+            return sampler.get_chain(), sampler.get_log_prob(), sampler.get_blobs()
+    sampler = emcee.EnsembleSampler(
+        walkers,
+        ndim,
+        log_probability,
+        blobs_dtype=BLOB_DTYPE,
+    )
     sampler.run_mcmc(initial_positions, steps, progress=True)
-    return sampler.get_chain(), sampler.get_log_prob()
+    return sampler.get_chain(), sampler.get_log_prob(), sampler.get_blobs()
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -549,26 +694,45 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.output_prefix = args.output_prefix.with_name(f"{args.output_prefix.name}{suffix}")
     rng = np.random.default_rng(args.seed)
     center = _parse_vector(args.initial_center, DEFAULT_INITIAL_CENTER)
-    paths = N256McmcPaths(
+    paths = N256FullMcmcPaths(
         catalog_a=args.catalog_a,
         catalog_b=args.catalog_b,
         vide_a=resolve_vide_catalog_variant_path(args.vide_a, args.vide_variant),
         vide_b=resolve_vide_catalog_variant_path(args.vide_b, args.vide_variant),
+        vide_centers_a=resolve_vide_catalog_variant_path(args.vide_centers_a, args.vide_variant),
+        vide_centers_b=resolve_vide_catalog_variant_path(args.vide_centers_b, args.vide_variant),
+        vide_macrocenters_a=resolve_vide_catalog_variant_path(
+            args.vide_macrocenters_a,
+            args.vide_variant,
+        ),
+        vide_macrocenters_b=resolve_vide_catalog_variant_path(
+            args.vide_macrocenters_b,
+            args.vide_variant,
+        ),
         vide_variant=args.vide_variant,
     )
-    settings = VsfMcmcSettings(reject_degenerate=not args.allow_degenerate)
+    settings = FullMcmcSettings(
+        reject_degenerate=not args.allow_degenerate,
+        vsf_weight=args.vsf_weight,
+        center_weight=args.center_weight,
+        center_sigma=args.center_sigma,
+        center_nu=args.center_nu,
+        center_radius_min_mpc_h=args.center_radius_min,
+        center_radius_max_mpc_h=args.center_radius_max,
+        vide_center_kind=args.vide_center_kind,
+    )
     initial_positions = initial_walker_positions(
         center=center,
         bounds=DEFAULT_BOUNDS,
         walkers=args.walkers,
         rng=rng,
     )
-    log_probability = N256VsfLogPosterior(
+    log_probability = N256FullLogPosterior(
         paths=paths,
         settings=settings,
         bounds=DEFAULT_BOUNDS,
     )
-    chain, log_prob = run_sampler(
+    chain, log_prob, blobs = run_sampler(
         log_probability=log_probability,
         initial_positions=initial_positions,
         steps=args.steps,
@@ -580,7 +744,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         burn_in=args.burn_in,
         thin=args.thin,
     )
+    sample_blobs = flatten_blobs(blobs, burn_in=args.burn_in, thin=args.thin)
     best_fit, best_log_probability, percentiles = summarize_samples(samples, sample_log_prob)
+    finite = np.isfinite(sample_log_prob)
+    best_index = int(np.argmax(sample_log_prob[finite]))
+    best_blob = sample_blobs[finite][best_index]
 
     prefix = args.output_prefix
     prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -588,6 +756,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         prefix.with_name(prefix.name + "_chain.npz"),
         chain=chain,
         log_probability=log_prob,
+        blobs=blobs,
+        blob_names=np.asarray(BLOB_NAMES),
         parameter_names=np.asarray(PARAMETER_NAMES),
         bounds=DEFAULT_BOUNDS,
         initial_center=center,
@@ -595,26 +765,48 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=args.seed,
         burn_in=args.burn_in,
         thin=args.thin,
+        vsf_weight=args.vsf_weight,
+        center_weight=args.center_weight,
+        center_sigma=args.center_sigma,
+        center_nu=args.center_nu,
+        vide_center_kind=args.vide_center_kind,
         vide_variant=args.vide_variant,
         vide_a=str(paths.vide_a),
         vide_b=str(paths.vide_b),
+        vide_centers_a=str(paths.vide_centers_a),
+        vide_centers_b=str(paths.vide_centers_b),
+        vide_macrocenters_a=str(paths.vide_macrocenters_a),
+        vide_macrocenters_b=str(paths.vide_macrocenters_b),
+        merge_score_mode="weighted",
+        geom_weight=settings.geom_weight,
+        bridge_min_radius_mpc_h=settings.bridge_min_radius_mpc_h,
+        bridge_delta_scale=settings.bridge_delta_scale,
+        bridge_density_mode=settings.bridge_density_mode,
     )
-    write_samples_csv(prefix.with_name(prefix.name + "_samples.csv"), samples, sample_log_prob)
+    write_samples_csv(
+        prefix.with_name(prefix.name + "_samples.csv"),
+        samples,
+        sample_log_prob,
+        sample_blobs,
+    )
     write_summary_csv(
         prefix.with_name(prefix.name + "_summary.csv"),
         best_fit=best_fit,
         best_log_probability=best_log_probability,
+        best_blob=best_blob,
         percentiles=percentiles,
     )
+    finite_samples = samples[np.isfinite(sample_log_prob)]
     write_trace_plot(prefix.with_name(prefix.name + "_trace.png"), chain)
     write_contour_plot(
         prefix.with_name(prefix.name + "_contours.png"),
-        samples[np.isfinite(sample_log_prob)],
+        finite_samples,
         best_fit=best_fit,
     )
     write_best_fit_command(
         prefix.with_name(prefix.name + "_best_fit_command.sh"),
         best_fit=best_fit,
+        vide_center_kind=args.vide_center_kind,
         paths=paths,
     )
 
@@ -622,6 +814,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     for name, value in zip(PARAMETER_NAMES, best_fit, strict=True):
         print(f"  {name}: {value:.8g}")
     print(f"  log_probability: {best_log_probability:.8g}")
+    print(f"  vsf_log_likelihood: {float(best_blob['vsf_log_likelihood']):.8g}")
+    print(f"  center_log_likelihood: {float(best_blob['center_log_likelihood']):.8g}")
     print(f"  vide_variant: {args.vide_variant}")
     print(f"Wrote products with prefix {prefix}")
     return 0

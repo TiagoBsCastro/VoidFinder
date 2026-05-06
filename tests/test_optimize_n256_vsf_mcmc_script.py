@@ -4,12 +4,14 @@ import numpy as np
 
 from scripts.optimize_n256_vsf_mcmc import (
     DEFAULT_BOUNDS,
+    N256McmcPaths,
     PARAMETER_NAMES,
     credible_density_levels,
     initial_walker_positions,
     log_uniform_prior,
     main,
     summarize_samples,
+    write_best_fit_command,
 )
 
 
@@ -111,3 +113,21 @@ def test_optimizer_script_writes_mcmc_products(tmp_path) -> None:
 
     assert [row["parameter"] for row in rows] == list(PARAMETER_NAMES)
     assert all(row["best_fit"] for row in rows)
+
+
+def test_best_fit_command_preserves_resolved_vide_paths(tmp_path) -> None:
+    command_path = tmp_path / "best_fit.sh"
+
+    write_best_fit_command(
+        command_path,
+        best_fit=np.array([0.12, 5.0, 1.0, 0.3]),
+        paths=N256McmcPaths(
+            vide_a=tmp_path / "untrimmed_voidDesc_all_a.out",
+            vide_b=tmp_path / "untrimmed_voidDesc_all_b.out",
+            vide_variant="untrimmed",
+        ),
+    )
+
+    command = command_path.read_text(encoding="utf-8")
+    assert "untrimmed_voidDesc_all_a.out" in command
+    assert "n256_mcmc_best_fit_paper_bins_vsf_untrimmed.csv" in command

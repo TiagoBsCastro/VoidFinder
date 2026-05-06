@@ -1,12 +1,18 @@
 import numpy as np
+import pytest
 
 from pinocchio_voids.calibration import (
     mean_halo_spacing_mpc_h,
     poisson_vsf_log_likelihood,
+    score_center_match_positions,
     score_direction_against_vide,
+    score_paired_center_match,
+    score_paired_joint_calibration,
     score_paired_radius_calibration,
+    score_paired_vsf_likelihood,
     score_radius_calibration_radii,
     score_vsf_likelihood_radii,
+    student_t_center_log_likelihood,
     sweep_geometry_parameters,
     sweep_radius_scale_parameters,
     sweep_vsf_likelihood_parameters,
@@ -210,6 +216,50 @@ def test_poisson_vsf_likelihood_prefers_matching_bin_counts() -> None:
     assert matching > missing_bin
 
 
+def test_student_t_center_likelihood_prefers_smaller_offsets() -> None:
+    close = student_t_center_log_likelihood([0.2, 0.3], center_sigma=1.0, center_nu=3.0)
+    far = student_t_center_log_likelihood([2.0, 3.0], center_sigma=1.0, center_nu=3.0)
+
+    assert close > far
+
+
+def test_center_match_score_uses_symmetric_nearest_neighbors() -> None:
+    score = score_center_match_positions(
+        target_label="A",
+        predicted_positions_mpc_h=[[0.0, 0.0, 0.0]],
+        predicted_radii_mpc_h=[1.0],
+        reference_positions_mpc_h=[[0.2, 0.0, 0.0], [4.0, 0.0, 0.0]],
+        reference_radii_mpc_h=[1.0, 1.0],
+        box_size_mpc_h=10.0,
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=2.0,
+    )
+
+    assert score.predicted_count == 1
+    assert score.reference_count == 2
+    assert score.comparison_count == 3
+    assert score.within_min_radius_count == 2
+    assert score.fraction_distance_lt_min_reff == 2 / 3
+
+
+def test_center_match_score_filters_radius_range() -> None:
+    score = score_center_match_positions(
+        target_label="A",
+        predicted_positions_mpc_h=[[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]],
+        predicted_radii_mpc_h=[1.0, 5.0],
+        reference_positions_mpc_h=[[0.2, 0.0, 0.0], [6.0, 0.0, 0.0]],
+        reference_radii_mpc_h=[1.0, 5.0],
+        box_size_mpc_h=10.0,
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=2.0,
+    )
+
+    assert score.predicted_count == 1
+    assert score.reference_count == 1
+    assert score.comparison_count == 2
+    assert score.median_distance_over_min_reff == pytest.approx(0.2)
+
+
 def test_score_vsf_likelihood_radii_uses_shared_vsf_bins() -> None:
     matching = score_vsf_likelihood_radii(
         target_label="A",
@@ -235,6 +285,81 @@ def test_score_vsf_likelihood_radii_uses_shared_vsf_bins() -> None:
     assert matching.log_likelihood > missing_bin.log_likelihood
     assert matching.negative_log_likelihood < missing_bin.negative_log_likelihood
     assert matching.radius_score.size_score.predicted_void_count == 2
+
+
+def test_paired_center_match_sums_directional_terms() -> None:
+    catalog_a = make_halo_catalog([[9.9, 0.0, 0.0], [0.1, 0.0, 0.0]], [1.0, 1.0])
+    catalog_b = make_halo_catalog([[4.9, 0.0, 0.0], [5.1, 0.0, 0.0]], [3.0, 3.0])
+    config = PairedVoidFinderConfig(
+        linking_length_mpc_h=0.3,
+        min_cluster_members=2,
+        reference_rho_bar_msun_h_mpc3=1.0,
+    )
+    result = run_paired_halo_void_finder(catalog_a, catalog_b, config=config)
+
+    score = score_paired_center_match(
+        result,
+        reference_positions_a_mpc_h=[[5.0, 0.0, 0.0]],
+        reference_radii_a_mpc_h=[2.0],
+        reference_positions_b_mpc_h=[[0.0, 0.0, 0.0]],
+        reference_radii_b_mpc_h=[2.0],
+        box_size_mpc_h=10.0,
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=3.0,
+    )
+
+    assert score.total_comparison_count == (
+        score.score_a.comparison_count + score.score_b.comparison_count
+    )
+    assert score.total_log_likelihood == (
+        score.score_a.log_likelihood + score.score_b.log_likelihood
+    )
+
+
+def test_joint_calibration_with_zero_center_weight_matches_vsf_likelihood() -> None:
+    catalog_a = make_halo_catalog([[9.9, 0.0, 0.0], [0.1, 0.0, 0.0]], [1.0, 1.0])
+    catalog_b = make_halo_catalog([[4.9, 0.0, 0.0], [5.1, 0.0, 0.0]], [3.0, 3.0])
+    reference = read_vide_void_desc("tests/fixtures/vide_voidDesc_all_small.out")
+    config = PairedVoidFinderConfig(
+        linking_length_mpc_h=0.3,
+        min_cluster_members=2,
+        reference_rho_bar_msun_h_mpc3=1.0,
+        radius_a0=1.0,
+        radius_alpha=1.0,
+        adjacency_factor=1.0,
+    )
+    result = run_paired_halo_void_finder(catalog_a, catalog_b, config=config)
+    vsf_score = score_paired_vsf_likelihood(
+        result,
+        reference_a=reference,
+        reference_b=reference,
+        box_size_mpc_h=10.0,
+        bins=[0.5, 1.5, 2.5],
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=2.5,
+        config=config,
+        count_floor=0.5,
+    )
+    joint_score = score_paired_joint_calibration(
+        result,
+        reference_a=reference,
+        reference_b=reference,
+        reference_positions_a_mpc_h=[[5.0, 0.0, 0.0]],
+        reference_radii_a_mpc_h=[2.0],
+        reference_positions_b_mpc_h=[[0.0, 0.0, 0.0]],
+        reference_radii_b_mpc_h=[2.0],
+        box_size_mpc_h=10.0,
+        bins=[0.5, 1.5, 2.5],
+        radius_min_mpc_h=0.5,
+        radius_max_mpc_h=2.5,
+        config=config,
+        count_floor=0.5,
+        vsf_weight=1.0,
+        center_weight=0.0,
+    )
+
+    assert joint_score.weighted_center_log_likelihood == 0.0
+    assert joint_score.total_log_likelihood == vsf_score.total_log_likelihood
 
 
 def test_radius_scale_sweep_sorts_non_degenerate_rows_first() -> None:

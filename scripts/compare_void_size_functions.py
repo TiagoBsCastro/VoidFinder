@@ -94,6 +94,60 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Adjacency threshold multiplier for protovoid merging.",
     )
     parser.add_argument(
+        "--merge-score-mode",
+        choices=("geometry_only", "weighted"),
+        default="geometry_only",
+        help="Use all adjacency edges or threshold weighted merge scores.",
+    )
+    parser.add_argument(
+        "--merge-threshold",
+        type=float,
+        default=0.0,
+        help="Minimum weighted merge score required to merge an adjacency edge.",
+    )
+    parser.add_argument(
+        "--geom-weight",
+        type=float,
+        default=1.0,
+        help="Weight applied to the geometric merge score.",
+    )
+    parser.add_argument(
+        "--bridge-weight",
+        type=float,
+        default=0.0,
+        help="Weight applied to the source-catalog bridge-density score.",
+    )
+    parser.add_argument(
+        "--compatibility-weight",
+        type=float,
+        default=0.0,
+        help="Weight applied to the source-cluster compatibility score.",
+    )
+    parser.add_argument(
+        "--bridge-radius-factor",
+        type=float,
+        default=0.5,
+        help="Bridge capsule radius factor for weighted merging.",
+    )
+    parser.add_argument(
+        "--bridge-min-radius",
+        type=float,
+        default=0.0,
+        help="Minimum bridge capsule radius in Mpc/h.",
+    )
+    parser.add_argument(
+        "--bridge-delta-scale",
+        type=float,
+        default=1.0,
+        help="Overdensity scale used to map bridge density to a 0..1 score.",
+    )
+    parser.add_argument(
+        "--bridge-density-mode",
+        choices=("number", "mass", "both"),
+        default="mass",
+        help="Halo density field used for bridge scoring.",
+    )
+    parser.add_argument(
         "--min-predicted-fraction",
         type=float,
         default=0.25,
@@ -288,6 +342,15 @@ def build_comparisons(args: argparse.Namespace) -> tuple[DirectionComparison, Di
         radius_a0=args.radius_a0,
         radius_alpha=args.radius_alpha,
         adjacency_factor=args.adjacency_factor,
+        merge_score_mode=args.merge_score_mode,
+        merge_threshold=args.merge_threshold,
+        geom_weight=args.geom_weight,
+        bridge_weight=args.bridge_weight,
+        compatibility_weight=args.compatibility_weight,
+        bridge_radius_factor=args.bridge_radius_factor,
+        bridge_min_radius_mpc_h=args.bridge_min_radius,
+        bridge_delta_scale=args.bridge_delta_scale,
+        bridge_density_mode=args.bridge_density_mode,
     )
     result = run_paired_halo_void_finder(paired.catalog_a, paired.catalog_b, config=config)
     bins = resolve_bins(args)

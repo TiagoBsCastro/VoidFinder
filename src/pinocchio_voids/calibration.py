@@ -1,4 +1,4 @@
-"""Calibration helpers for the geometry-only paired-halo prototype."""
+"""Calibration helpers for the paired-halo void finder."""
 
 from __future__ import annotations
 
@@ -8,13 +8,14 @@ from itertools import product
 from typing import Iterable, Literal
 
 import numpy as np
-from numpy.typing import ArrayLike
+from numpy.typing import ArrayLike, NDArray
 
 from pinocchio_voids.catalog import HaloCatalog
 from pinocchio_voids.evaluation import (
     VoidSizeFunctionComparison,
     compare_void_size_functions,
 )
+from pinocchio_voids.geometry import periodic_distance
 from pinocchio_voids.io.vide import VideVoidCatalog
 from pinocchio_voids.voidfinder import (
     DirectionalVoidFinderResult,
@@ -141,6 +142,54 @@ class PairedVsfLikelihoodResult:
 
 
 @dataclass(frozen=True)
+class DirectionalCenterMatchScore:
+    """Robust center-match score for one target direction."""
+
+    target_label: str
+    predicted_count: int
+    reference_count: int
+    comparison_count: int
+    within_min_radius_count: int
+    center_sigma: float
+    center_nu: float
+    median_distance_over_min_reff: float
+    p90_distance_over_min_reff: float
+    fraction_distance_lt_min_reff: float
+    log_likelihood: float
+    negative_log_likelihood: float
+
+
+@dataclass(frozen=True)
+class PairedCenterMatchScore:
+    """Robust center-match score for target A and target B together."""
+
+    score_a: DirectionalCenterMatchScore
+    score_b: DirectionalCenterMatchScore
+    center_sigma: float
+    center_nu: float
+    total_log_likelihood: float
+    total_negative_log_likelihood: float
+    total_comparison_count: int
+    total_within_min_radius_count: int
+    fraction_distance_lt_min_reff: float
+
+
+@dataclass(frozen=True)
+class PairedJointCalibrationResult:
+    """Combined VSF and center-match calibration score."""
+
+    vsf_score: PairedVsfLikelihoodResult
+    center_score: PairedCenterMatchScore
+    vsf_weight: float
+    center_weight: float
+    weighted_vsf_log_likelihood: float
+    weighted_center_log_likelihood: float
+    total_log_likelihood: float
+    total_negative_log_likelihood: float
+    is_degenerate: bool
+
+
+@dataclass(frozen=True)
 class _LinkingLengthCandidate:
     mode: Literal["fixed", "mean_spacing"]
     value: float
@@ -176,6 +225,20 @@ def _count_floor(value: float) -> float:
     return number
 
 
+def _positive_finite(name: str, value: float) -> float:
+    number = float(value)
+    if not np.isfinite(number) or number <= 0.0:
+        raise CalibrationError(f"{name} must be positive and finite")
+    return number
+
+
+def _non_negative_finite(name: str, value: float) -> float:
+    number = float(value)
+    if not np.isfinite(number) or number < 0.0:
+        raise CalibrationError(f"{name} must be non-negative and finite")
+    return number
+
+
 def _non_negative_values(
     name: str,
     values: Iterable[float],
@@ -201,6 +264,10 @@ def _positive_int_values(name: str, values: Iterable[int]) -> tuple[int, ...]:
 
 def _void_radii(result: DirectionalVoidFinderResult) -> list[float]:
     return [void.effective_radius_mpc_h for void in result.voids]
+
+
+def _void_positions(result: DirectionalVoidFinderResult) -> NDArray[np.float64]:
+    return np.asarray([void.center_mpc_h for void in result.voids], dtype=np.float64).reshape((-1, 3))
 
 
 def mean_halo_spacing_mpc_h(catalog: HaloCatalog) -> float:
@@ -436,6 +503,263 @@ def poisson_vsf_log_likelihood(
     return float(math.fsum(terms))
 
 
+def student_t_center_log_likelihood(
+    normalized_distances: ArrayLike,
+    *,
+    center_sigma: float = 1.0,
+    center_nu: float = 3.0,
+) -> float:
+    """Return a robust log likelihood for normalized center separations."""
+
+    sigma = _positive_finite("center_sigma", center_sigma)
+    nu = _positive_finite("center_nu", center_nu)
+    distances = np.asarray(normalized_distances, dtype=np.float64)
+    if distances.ndim != 1:
+        raise CalibrationError("normalized_distances must be one-dimensional")
+    if not np.all(np.isfinite(distances)) or np.any(distances < 0.0):
+        raise CalibrationError("normalized_distances must be non-negative and finite")
+    if distances.size == 0:
+        return -np.inf
+    log_norm = (
+        math.lgamma(0.5 * (nu + 1.0))
+        - math.lgamma(0.5 * nu)
+        - 0.5 * math.log(nu * math.pi * sigma**2)
+    )
+    scaled = np.square(distances / sigma) / nu
+    terms = log_norm - 0.5 * (nu + 1.0) * np.log1p(scaled)
+    return float(math.fsum(float(term) for term in terms))
+
+
+def _positions_array(name: str, values: ArrayLike) -> NDArray[np.float64]:
+    positions = np.asarray(values, dtype=np.float64)
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise CalibrationError(f"{name} must have shape (n, 3)")
+    if not np.all(np.isfinite(positions)):
+        raise CalibrationError(f"{name} must contain finite values")
+    return positions
+
+
+def _radii_array(name: str, values: ArrayLike, *, expected_size: int) -> NDArray[np.float64]:
+    radii = np.asarray(values, dtype=np.float64)
+    if radii.ndim != 1 or radii.shape[0] != expected_size:
+        raise CalibrationError(f"{name} must be one-dimensional with one radius per position")
+    if not np.all(np.isfinite(radii)) or np.any(radii <= 0.0):
+        raise CalibrationError(f"{name} must contain positive finite values")
+    return radii
+
+
+def _radius_range_mask(
+    radii_mpc_h: NDArray[np.float64],
+    *,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+) -> NDArray[np.bool_]:
+    lower = _positive_finite("radius_min_mpc_h", radius_min_mpc_h)
+    upper = _positive_finite("radius_max_mpc_h", radius_max_mpc_h)
+    if upper <= lower:
+        raise CalibrationError("radius_max_mpc_h must be larger than radius_min_mpc_h")
+    return (radii_mpc_h >= lower) & (radii_mpc_h <= upper)
+
+
+def _nearest_normalized_center_distances(
+    source_positions_mpc_h: NDArray[np.float64],
+    source_radii_mpc_h: NDArray[np.float64],
+    target_positions_mpc_h: NDArray[np.float64],
+    target_radii_mpc_h: NDArray[np.float64],
+    *,
+    box_size_mpc_h: float,
+) -> NDArray[np.float64]:
+    distances = periodic_distance(
+        source_positions_mpc_h[:, np.newaxis, :],
+        target_positions_mpc_h[np.newaxis, :, :],
+        box_size_mpc_h,
+    )
+    nearest_indices = np.argmin(distances, axis=1)
+    nearest_distances = distances[np.arange(distances.shape[0]), nearest_indices]
+    nearest_radii = target_radii_mpc_h[nearest_indices]
+    return nearest_distances / np.minimum(source_radii_mpc_h, nearest_radii)
+
+
+def score_center_match_positions(
+    *,
+    target_label: str,
+    predicted_positions_mpc_h: ArrayLike,
+    predicted_radii_mpc_h: ArrayLike,
+    reference_positions_mpc_h: ArrayLike,
+    reference_radii_mpc_h: ArrayLike,
+    box_size_mpc_h: float,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+    center_sigma: float = 1.0,
+    center_nu: float = 3.0,
+) -> DirectionalCenterMatchScore:
+    """Score object-level finder/VIDE center agreement for one target."""
+
+    sigma = _positive_finite("center_sigma", center_sigma)
+    nu = _positive_finite("center_nu", center_nu)
+    predicted_positions = _positions_array("predicted_positions_mpc_h", predicted_positions_mpc_h)
+    predicted_radii = _radii_array(
+        "predicted_radii_mpc_h",
+        predicted_radii_mpc_h,
+        expected_size=predicted_positions.shape[0],
+    )
+    reference_positions = _positions_array("reference_positions_mpc_h", reference_positions_mpc_h)
+    reference_radii = _radii_array(
+        "reference_radii_mpc_h",
+        reference_radii_mpc_h,
+        expected_size=reference_positions.shape[0],
+    )
+    predicted_mask = _radius_range_mask(
+        predicted_radii,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+    )
+    reference_mask = _radius_range_mask(
+        reference_radii,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+    )
+    predicted_positions = predicted_positions[predicted_mask]
+    predicted_radii = predicted_radii[predicted_mask]
+    reference_positions = reference_positions[reference_mask]
+    reference_radii = reference_radii[reference_mask]
+    predicted_count = int(predicted_radii.size)
+    reference_count = int(reference_radii.size)
+
+    if predicted_count == 0 or reference_count == 0:
+        return DirectionalCenterMatchScore(
+            target_label=target_label,
+            predicted_count=predicted_count,
+            reference_count=reference_count,
+            comparison_count=0,
+            within_min_radius_count=0,
+            center_sigma=sigma,
+            center_nu=nu,
+            median_distance_over_min_reff=np.nan,
+            p90_distance_over_min_reff=np.nan,
+            fraction_distance_lt_min_reff=np.nan,
+            log_likelihood=-np.inf,
+            negative_log_likelihood=np.inf,
+        )
+
+    predicted_to_reference = _nearest_normalized_center_distances(
+        predicted_positions,
+        predicted_radii,
+        reference_positions,
+        reference_radii,
+        box_size_mpc_h=box_size_mpc_h,
+    )
+    reference_to_predicted = _nearest_normalized_center_distances(
+        reference_positions,
+        reference_radii,
+        predicted_positions,
+        predicted_radii,
+        box_size_mpc_h=box_size_mpc_h,
+    )
+    normalized_distances = np.concatenate([predicted_to_reference, reference_to_predicted])
+    within_count = int(np.count_nonzero(normalized_distances < 1.0))
+    log_likelihood = student_t_center_log_likelihood(
+        normalized_distances,
+        center_sigma=sigma,
+        center_nu=nu,
+    )
+    return DirectionalCenterMatchScore(
+        target_label=target_label,
+        predicted_count=predicted_count,
+        reference_count=reference_count,
+        comparison_count=int(normalized_distances.size),
+        within_min_radius_count=within_count,
+        center_sigma=sigma,
+        center_nu=nu,
+        median_distance_over_min_reff=float(np.median(normalized_distances)),
+        p90_distance_over_min_reff=float(np.percentile(normalized_distances, 90.0)),
+        fraction_distance_lt_min_reff=float(within_count / normalized_distances.size),
+        log_likelihood=log_likelihood,
+        negative_log_likelihood=-log_likelihood,
+    )
+
+
+def score_direction_center_match(
+    result: DirectionalVoidFinderResult,
+    *,
+    reference_positions_mpc_h: ArrayLike,
+    reference_radii_mpc_h: ArrayLike,
+    box_size_mpc_h: float,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+    center_sigma: float = 1.0,
+    center_nu: float = 3.0,
+) -> DirectionalCenterMatchScore:
+    """Score finder centers against reference centers for one target direction."""
+
+    return score_center_match_positions(
+        target_label=result.target_label,
+        predicted_positions_mpc_h=_void_positions(result),
+        predicted_radii_mpc_h=_void_radii(result),
+        reference_positions_mpc_h=reference_positions_mpc_h,
+        reference_radii_mpc_h=reference_radii_mpc_h,
+        box_size_mpc_h=box_size_mpc_h,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+        center_sigma=center_sigma,
+        center_nu=center_nu,
+    )
+
+
+def score_paired_center_match(
+    result: PairedVoidFinderResult,
+    *,
+    reference_positions_a_mpc_h: ArrayLike,
+    reference_radii_a_mpc_h: ArrayLike,
+    reference_positions_b_mpc_h: ArrayLike,
+    reference_radii_b_mpc_h: ArrayLike,
+    box_size_mpc_h: float,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+    center_sigma: float = 1.0,
+    center_nu: float = 3.0,
+) -> PairedCenterMatchScore:
+    """Score paired finder centers against target-A and target-B references."""
+
+    sigma = _positive_finite("center_sigma", center_sigma)
+    nu = _positive_finite("center_nu", center_nu)
+    score_a = score_direction_center_match(
+        result.voids_a,
+        reference_positions_mpc_h=reference_positions_a_mpc_h,
+        reference_radii_mpc_h=reference_radii_a_mpc_h,
+        box_size_mpc_h=box_size_mpc_h,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+        center_sigma=sigma,
+        center_nu=nu,
+    )
+    score_b = score_direction_center_match(
+        result.voids_b,
+        reference_positions_mpc_h=reference_positions_b_mpc_h,
+        reference_radii_mpc_h=reference_radii_b_mpc_h,
+        box_size_mpc_h=box_size_mpc_h,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+        center_sigma=sigma,
+        center_nu=nu,
+    )
+    total_log_likelihood = score_a.log_likelihood + score_b.log_likelihood
+    total_count = score_a.comparison_count + score_b.comparison_count
+    total_within = score_a.within_min_radius_count + score_b.within_min_radius_count
+    fraction = np.nan if total_count == 0 else float(total_within / total_count)
+    return PairedCenterMatchScore(
+        score_a=score_a,
+        score_b=score_b,
+        center_sigma=sigma,
+        center_nu=nu,
+        total_log_likelihood=total_log_likelihood,
+        total_negative_log_likelihood=-total_log_likelihood,
+        total_comparison_count=total_count,
+        total_within_min_radius_count=total_within,
+        fraction_distance_lt_min_reff=fraction,
+    )
+
+
 def _score_likelihood_from_radius_score(
     radius_score: DirectionalRadiusCalibrationScore,
     *,
@@ -632,6 +956,102 @@ def score_paired_vsf_likelihood(
     )
 
 
+def _weighted_log_likelihood(weight: float, log_likelihood: float) -> float:
+    resolved_weight = _non_negative_finite("likelihood weight", weight)
+    if resolved_weight == 0.0:
+        return 0.0
+    value = float(log_likelihood)
+    if not np.isfinite(value):
+        return -np.inf
+    return float(resolved_weight * value)
+
+
+def score_paired_joint_calibration(
+    result: PairedVoidFinderResult,
+    *,
+    reference_a: VideVoidCatalog,
+    reference_b: VideVoidCatalog,
+    reference_positions_a_mpc_h: ArrayLike,
+    reference_radii_a_mpc_h: ArrayLike,
+    reference_positions_b_mpc_h: ArrayLike,
+    reference_radii_b_mpc_h: ArrayLike,
+    box_size_mpc_h: float,
+    bins: int | ArrayLike,
+    radius_min_mpc_h: float,
+    radius_max_mpc_h: float,
+    config: PairedVoidFinderConfig,
+    linking_mode: Literal["fixed", "mean_spacing"] = "fixed",
+    linking_value: float | None = None,
+    source_a_linking_length_mpc_h: float | None = None,
+    source_b_linking_length_mpc_h: float | None = None,
+    count_floor: float = 0.5,
+    min_predicted_fraction: float = 0.25,
+    center_radius_min_mpc_h: float | None = None,
+    center_radius_max_mpc_h: float | None = None,
+    center_sigma: float = 1.0,
+    center_nu: float = 3.0,
+    vsf_weight: float = 1.0,
+    center_weight: float = 1.0,
+) -> PairedJointCalibrationResult:
+    """Score paired finder output with VSF and robust center-match terms."""
+
+    resolved_vsf_weight = _non_negative_finite("vsf_weight", vsf_weight)
+    resolved_center_weight = _non_negative_finite("center_weight", center_weight)
+    if resolved_vsf_weight == 0.0 and resolved_center_weight == 0.0:
+        raise CalibrationError("At least one likelihood weight must be positive")
+    center_min = radius_min_mpc_h if center_radius_min_mpc_h is None else center_radius_min_mpc_h
+    center_max = radius_max_mpc_h if center_radius_max_mpc_h is None else center_radius_max_mpc_h
+
+    vsf_score = score_paired_vsf_likelihood(
+        result,
+        reference_a=reference_a,
+        reference_b=reference_b,
+        box_size_mpc_h=box_size_mpc_h,
+        bins=bins,
+        radius_min_mpc_h=radius_min_mpc_h,
+        radius_max_mpc_h=radius_max_mpc_h,
+        config=config,
+        linking_mode=linking_mode,
+        linking_value=linking_value,
+        source_a_linking_length_mpc_h=source_a_linking_length_mpc_h,
+        source_b_linking_length_mpc_h=source_b_linking_length_mpc_h,
+        count_floor=count_floor,
+        min_predicted_fraction=min_predicted_fraction,
+    )
+    center_score = score_paired_center_match(
+        result,
+        reference_positions_a_mpc_h=reference_positions_a_mpc_h,
+        reference_radii_a_mpc_h=reference_radii_a_mpc_h,
+        reference_positions_b_mpc_h=reference_positions_b_mpc_h,
+        reference_radii_b_mpc_h=reference_radii_b_mpc_h,
+        box_size_mpc_h=box_size_mpc_h,
+        radius_min_mpc_h=center_min,
+        radius_max_mpc_h=center_max,
+        center_sigma=center_sigma,
+        center_nu=center_nu,
+    )
+    weighted_vsf = _weighted_log_likelihood(
+        resolved_vsf_weight,
+        vsf_score.total_log_likelihood,
+    )
+    weighted_center = _weighted_log_likelihood(
+        resolved_center_weight,
+        center_score.total_log_likelihood,
+    )
+    total_log_likelihood = weighted_vsf + weighted_center
+    return PairedJointCalibrationResult(
+        vsf_score=vsf_score,
+        center_score=center_score,
+        vsf_weight=resolved_vsf_weight,
+        center_weight=resolved_center_weight,
+        weighted_vsf_log_likelihood=weighted_vsf,
+        weighted_center_log_likelihood=weighted_center,
+        total_log_likelihood=total_log_likelihood,
+        total_negative_log_likelihood=-total_log_likelihood,
+        is_degenerate=vsf_score.radius_result.is_degenerate,
+    )
+
+
 def score_paired_result_against_vide(
     result: PairedVoidFinderResult,
     *,
@@ -727,13 +1147,16 @@ def _direction_from_cached_clusters(
         radius_a0=radius_a0,
         radius_alpha=radius_alpha,
         reference_rho_bar_msun_h_mpc3=reference_rho_bar_msun_h_mpc3,
+        source_clusters=source_clusters,
     )
+    merge_edges = tuple(edge for edge in adjacency_edges if edge.passes_merge_threshold)
     return DirectionalVoidFinderResult(
         source_label=source_label,
         target_label=target_label,
         source_clusters=source_clusters,
         protovoids=protovoids,
         adjacency_edges=adjacency_edges,
+        merge_edges=merge_edges,
         voids=voids,
     )
 

@@ -1,13 +1,13 @@
 """Command-line interface for pinocchio_voids."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from pinocchio_voids.calibration import sweep_geometry_parameters
+from pinocchio_voids.calibration import mean_halo_spacing_mpc_h, sweep_geometry_parameters
 from pinocchio_voids.config import load_run_config
 from pinocchio_voids.evaluation import compare_void_size_functions
 from pinocchio_voids.io import read_paired_pinocchio_halo_catalogs, read_vide_void_desc
@@ -64,6 +64,7 @@ def _add_direction_row(
         str(len(result.source_clusters)),
         str(len(result.protovoids)),
         str(len(result.adjacency_edges)),
+        str(len(result.merge_edges)),
         str(len(result.voids)),
         _reference_count(reference_path),
     )
@@ -115,6 +116,11 @@ def paired_prototype(
         "--linking-length",
         help="Periodic FoF-like source-cluster linking length in Mpc/h.",
     ),
+    linking_factor: Optional[float] = typer.Option(
+        None,
+        "--linking-factor",
+        help="Use this source mean-spacing factor instead of a fixed linking length.",
+    ),
     min_cluster_members: int = typer.Option(
         2,
         "--min-cluster-members",
@@ -140,6 +146,51 @@ def paired_prototype(
         "--adjacency-factor",
         help="Adjacency threshold multiplier for protovoid merging.",
     ),
+    merge_score_mode: Literal["geometry_only", "weighted"] = typer.Option(
+        "geometry_only",
+        "--merge-score-mode",
+        help="Use all adjacency edges or threshold weighted merge scores.",
+    ),
+    merge_threshold: float = typer.Option(
+        0.0,
+        "--merge-threshold",
+        help="Minimum weighted merge score required to merge an adjacency edge.",
+    ),
+    geom_weight: float = typer.Option(
+        1.0,
+        "--geom-weight",
+        help="Weight applied to the geometric edge score.",
+    ),
+    bridge_weight: float = typer.Option(
+        0.0,
+        "--bridge-weight",
+        help="Weight applied to the source-catalog bridge score.",
+    ),
+    compatibility_weight: float = typer.Option(
+        0.0,
+        "--compatibility-weight",
+        help="Weight applied to protovoid/source-cluster compatibility.",
+    ),
+    bridge_radius_factor: float = typer.Option(
+        0.5,
+        "--bridge-radius-factor",
+        help="Bridge capsule radius factor for weighted merging.",
+    ),
+    bridge_min_radius_mpc_h: float = typer.Option(
+        0.0,
+        "--bridge-min-radius",
+        help="Minimum bridge capsule radius in Mpc/h.",
+    ),
+    bridge_delta_scale: float = typer.Option(
+        1.0,
+        "--bridge-delta-scale",
+        help="Overdensity scale used to map bridge density to a 0..1 score.",
+    ),
+    bridge_density_mode: Literal["number", "mass", "both"] = typer.Option(
+        "mass",
+        "--bridge-density-mode",
+        help="Halo density field used for bridge scoring.",
+    ),
     vide_a: Optional[Path] = typer.Option(
         None,
         "--vide-a",
@@ -156,21 +207,37 @@ def paired_prototype(
         help="If positive, compare predicted and VIDE void size functions with this many bins.",
     ),
 ) -> None:
-    """Run the geometry-only paired-halo prototype on existing catalogs."""
+    """Run the paired-halo void finder on existing catalogs."""
 
     paired = read_paired_pinocchio_halo_catalogs(
         catalog_a,
         catalog_b,
         box_size_mpc_h=box_size_mpc_h,
     )
+    if linking_factor is None:
+        source_a_linking_length = linking_length_mpc_h
+        source_b_linking_length = None
+    else:
+        source_a_linking_length = linking_factor * mean_halo_spacing_mpc_h(paired.catalog_a)
+        source_b_linking_length = linking_factor * mean_halo_spacing_mpc_h(paired.catalog_b)
     config = PairedVoidFinderConfig(
-        linking_length_mpc_h=linking_length_mpc_h,
+        linking_length_mpc_h=source_a_linking_length,
+        source_b_linking_length_mpc_h=source_b_linking_length,
         min_cluster_members=min_cluster_members,
         min_cluster_mass_msun_h=min_cluster_mass_msun_h,
         reference_rho_bar_msun_h_mpc3=reference_rho_bar_msun_h_mpc3,
         radius_a0=radius_a0,
         radius_alpha=radius_alpha,
         adjacency_factor=adjacency_factor,
+        merge_score_mode=merge_score_mode,
+        merge_threshold=merge_threshold,
+        geom_weight=geom_weight,
+        bridge_weight=bridge_weight,
+        compatibility_weight=compatibility_weight,
+        bridge_radius_factor=bridge_radius_factor,
+        bridge_min_radius_mpc_h=bridge_min_radius_mpc_h,
+        bridge_delta_scale=bridge_delta_scale,
+        bridge_density_mode=bridge_density_mode,
     )
     result = run_paired_halo_void_finder(
         paired.catalog_a,
@@ -185,6 +252,7 @@ def paired_prototype(
     table.add_column("Clusters", justify="right")
     table.add_column("Protos", justify="right")
     table.add_column("Edges", justify="right")
+    table.add_column("Merge Edges", justify="right")
     table.add_column("Voids", justify="right")
     table.add_column("VIDE", justify="right")
 

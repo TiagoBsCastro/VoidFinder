@@ -6,6 +6,12 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
+from pinocchio_voids.io import (
+    VIDE_CATALOG_VARIANTS,
+    resolve_vide_catalog_variant_path,
+    vide_catalog_variant_output_suffix,
+)
+
 try:
     from scripts.compare_void_size_functions import main as compare_main
 except ModuleNotFoundError as exc:
@@ -58,6 +64,12 @@ def parse_args() -> argparse.Namespace:
         help="Overlay the Vdn/SVdW theoretical void size function.",
     )
     parser.add_argument(
+        "--vide-variant",
+        choices=VIDE_CATALOG_VARIANTS,
+        default="all",
+        help="VIDE catalog variant used for the reference VSF.",
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("runs/void-statistics"),
@@ -83,6 +95,41 @@ def parse_args() -> argparse.Namespace:
         default=N256_RUN["adjacency_factor"],
         help="Adjacency threshold multiplier.",
     )
+    parser.add_argument(
+        "--merge-score-mode",
+        choices=("geometry_only", "weighted"),
+        default="geometry_only",
+        help="Use all adjacency edges or threshold weighted merge scores.",
+    )
+    parser.add_argument("--merge-threshold", default="0.0", help="Weighted merge threshold.")
+    parser.add_argument("--geom-weight", default="1.0", help="Geometric score weight.")
+    parser.add_argument("--bridge-weight", default="0.0", help="Bridge-density score weight.")
+    parser.add_argument(
+        "--compatibility-weight",
+        default="0.0",
+        help="Compatibility score weight.",
+    )
+    parser.add_argument(
+        "--bridge-radius-factor",
+        default="0.5",
+        help="Bridge capsule radius factor.",
+    )
+    parser.add_argument(
+        "--bridge-min-radius",
+        default="0.0",
+        help="Minimum bridge capsule radius in Mpc/h.",
+    )
+    parser.add_argument(
+        "--bridge-delta-scale",
+        default="1.0",
+        help="Overdensity scale for bridge scoring.",
+    )
+    parser.add_argument(
+        "--bridge-density-mode",
+        choices=("number", "mass", "both"),
+        default="mass",
+        help="Halo density field used for bridge scoring.",
+    )
     return parser.parse_args()
 
 
@@ -95,12 +142,12 @@ def _run_args(args: argparse.Namespace) -> list[str]:
         suffix = "paper_bins_theory_vsf" if args.include_theory else "paper_bins_vsf"
     else:
         suffix = "finder_vide_theory_vsf" if args.include_theory else "finder_vide_vsf"
-    output_stem = args.output_dir / f"n256_{suffix}"
+    output_stem = args.output_dir / f"n256_{suffix}{vide_catalog_variant_output_suffix(args.vide_variant)}"
     command = [
         N256_RUN["catalog_a"],
         N256_RUN["catalog_b"],
-        N256_RUN["vide_a"],
-        N256_RUN["vide_b"],
+        str(resolve_vide_catalog_variant_path(N256_RUN["vide_a"], args.vide_variant)),
+        str(resolve_vide_catalog_variant_path(N256_RUN["vide_b"], args.vide_variant)),
         "--box-size",
         str(args.box_size),
         "--rho-bar",
@@ -113,12 +160,30 @@ def _run_args(args: argparse.Namespace) -> list[str]:
         str(args.radius_alpha),
         "--adjacency-factor",
         str(args.adjacency_factor),
+        "--merge-score-mode",
+        args.merge_score_mode,
+        "--merge-threshold",
+        str(args.merge_threshold),
+        "--geom-weight",
+        str(args.geom_weight),
+        "--bridge-weight",
+        str(args.bridge_weight),
+        "--compatibility-weight",
+        str(args.compatibility_weight),
+        "--bridge-radius-factor",
+        str(args.bridge_radius_factor),
+        "--bridge-min-radius",
+        str(args.bridge_min_radius),
+        "--bridge-delta-scale",
+        str(args.bridge_delta_scale),
+        "--bridge-density-mode",
+        args.bridge_density_mode,
         "--bins",
         str(bins),
         "--binning",
         binning,
         "--label",
-        "n256 geometry-only",
+        "n256 scored merge" if args.merge_score_mode == "weighted" else "n256 geometry-only",
         "--output-csv",
         str(output_stem.with_suffix(".csv")),
         "--output-plot",
