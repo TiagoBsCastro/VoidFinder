@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import numpy as np
 from numpy.typing import NDArray
@@ -30,10 +31,31 @@ PINOCCHIO_HALO_COLUMN_NAMES: tuple[str, ...] = (
 )
 
 _COLUMN_INDEX = {name: index for index, name in enumerate(PINOCCHIO_HALO_COLUMN_NAMES)}
+PINOCCHIO_POSITION_MODES: tuple[str, ...] = ("final", "initial")
+PinocchioPositionMode = Literal["final", "initial"]
 
 
 class PinocchioCatalogError(ValueError):
     """Raised when a PINOCCHIO catalog cannot be parsed or validated."""
+
+
+def normalize_pinocchio_position_mode(position_mode: str) -> PinocchioPositionMode:
+    """Return a validated PINOCCHIO position-mode string."""
+
+    mode = str(position_mode).strip().lower()
+    if mode not in PINOCCHIO_POSITION_MODES:
+        choices = ", ".join(PINOCCHIO_POSITION_MODES)
+        raise PinocchioCatalogError(
+            f"Unknown PINOCCHIO position_mode {position_mode!r}; choose one of {choices}"
+        )
+    return mode  # type: ignore[return-value]
+
+
+def pinocchio_position_mode_output_suffix(position_mode: str) -> str:
+    """Return filename suffix for non-default PINOCCHIO position modes."""
+
+    mode = normalize_pinocchio_position_mode(position_mode)
+    return "" if mode == "final" else f"_{mode}"
 
 
 @dataclass(frozen=True)
@@ -89,6 +111,7 @@ class PinocchioHaloCatalog:
         *,
         box_size_mpc_h: float | None = None,
         wrap_positions: bool = True,
+        position_mode: PinocchioPositionMode = "final",
     ) -> HaloCatalog:
         """Convert this PINOCCHIO-specific catalog to the canonical catalog."""
 
@@ -96,6 +119,7 @@ class PinocchioHaloCatalog:
             self,
             box_size_mpc_h=box_size_mpc_h,
             wrap_positions=wrap_positions,
+            position_mode=position_mode,
         )
 
 
@@ -158,16 +182,21 @@ def pinocchio_to_halo_catalog(
     *,
     box_size_mpc_h: float | None = None,
     wrap_positions: bool = True,
+    position_mode: PinocchioPositionMode = "final",
 ) -> HaloCatalog:
     """Convert a parsed PINOCCHIO halo catalog to the canonical halo catalog."""
 
+    mode = normalize_pinocchio_position_mode(position_mode)
     box_size = box_size_mpc_h if box_size_mpc_h is not None else catalog.box_size_mpc_h
     if box_size is None or box_size <= 0:
         raise PinocchioCatalogError(
             "A positive box_size_mpc_h is required for canonical conversion"
         )
 
-    positions = catalog.final_positions_mpc_h.copy()
+    if mode == "final":
+        positions = catalog.final_positions_mpc_h.copy()
+    else:
+        positions = catalog.initial_positions_mpc_h.copy()
     if wrap_positions:
         positions %= box_size
 
@@ -178,6 +207,7 @@ def pinocchio_to_halo_catalog(
         velocities_km_s=catalog.velocities_km_s,
         particle_counts=catalog.n_particles,
         box_size_mpc_h=box_size,
+        position_mode=mode,
         position_unit="Mpc/h",
         mass_unit="Msun/h",
         velocity_unit="km/s",

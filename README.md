@@ -218,6 +218,14 @@ example `n256_vsf_mcmc_untrimmed_*` or
 `n256_full_mcmc_untrimmed_*` for `--vide-variant untrimmed`. The generated
 best-fit command preserves the selected resolved VIDE paths.
 
+All finder, calibration, and finder-vs-VIDE diagnostics accept
+`--position-mode final|initial`. The default `final` preserves the current
+Eulerian halo-position calibration. Use `--position-mode initial` to build
+source clusters and protovoids from the PINOCCHIO initial-position columns; by
+default these products get an `_initial` suffix so they do not overwrite the
+final-position calibration. VIDE reference catalogs remain final-space
+references unless regenerated separately.
+
 The current local `n256` plot defaults use the first MCMC maximum-likelihood
 row: `--linking-factor 0.14605092780899798`,
 `--radius-a0 6.14700029037185`, `--radius-alpha 0.9313222316465706`,
@@ -325,7 +333,90 @@ counts, nearest 3D sphere margins, and projected slice-coverage margins for
 `voidDesc_all`, `trimmed_nodencut`, `untrimmed`, and `untrimmed_dencut` VIDE
 variants when those files are present.
 
-The Vdn/SVdW reference is documented under `Papers/`.
+Run VAST.VoidFinder as an external comparator on the active `n256` halo
+catalogs. Keep VAST in its own ignored environment because it depends on
+Astropy and compiled Cython extensions:
+
+```bash
+/home/tcastro/miniforge3/bin/mamba create -n .conda-vast \
+  python=3.10 numpy scipy cython astropy scikit-learn matplotlib h5py pip -y
+/home/tcastro/miniforge3/bin/mamba install -n .conda-vast psutil healpy -y
+git clone https://github.com/DESI-UR/VAST external/VAST
+cd external/VAST
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python setup.py build_ext --inplace
+cd ../..
+```
+
+Then run VAST on both paired `n256` catalogs and compare against the default
+VIDE `voidDesc_all` target:
+
+```bash
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/run_n256_vast_voidfinder.py \
+  --target both \
+  --num-cpus 8
+
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/plot_n256_vast_vide_diagnostics.py \
+  --vide-variant all \
+  --radius-mode both \
+  --target both \
+  --slice-axis z \
+  --slice-center 128 \
+  --slice-thickness 20
+```
+
+The VAST diagnostics write VSF and slab products under
+`runs/void-statistics/n256_vast_vide_all_*`. Two VAST radius definitions are
+reported: the native maximal-sphere radius and an estimated spherical-equivalent
+`R_eff` from the union of VAST holes using deterministic voxelization.
+
+The first default run found many more, smaller VAST voids than VIDE `all`:
+1134/1137 VAST maximal spheres for targets A/B versus 121/124 VIDE voids.
+Audit the input catalogs before interpreting that difference:
+
+```bash
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/audit_n256_vast_vide_inputs.py
+```
+
+The audit writes `runs/void-statistics/n256_vast_vide_input_audit.csv`. The
+current baseline shows PINOCCHIO final positions, VIDE input tracers, and VAST
+input tracers match to roundoff.
+
+Write radius, VSF, and symmetric nearest-center diagnostics across VIDE
+variants:
+
+```bash
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/debug_n256_vast_vide_mismatch.py
+```
+
+To test VAST parameter sensitivity, run radius-threshold and wall/field
+preprocessing variants. Non-default VAST products are written with suffixes such
+as `_rmin15`, `_rmin20`, `_wall`, and `_wall_rmin20`:
+
+```bash
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/run_n256_vast_voidfinder.py \
+  --target both \
+  --num-cpus 8 \
+  --min-maximal-radius 15 \
+  --min-maximal-radius 20 \
+  --min-maximal-radius 25
+
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/run_n256_vast_voidfinder.py \
+  --target both \
+  --num-cpus 8 \
+  --wall-field-separation \
+  --min-maximal-radius 10 \
+  --min-maximal-radius 15 \
+  --min-maximal-radius 20 \
+  --min-maximal-radius 25
+```
+
+The current sensitivity pass suggests the mismatch is algorithm/catalog
+definition rather than input data: `rmin15` brings VAST `R_eff` medians close to
+VIDE but still leaves roughly twice as many VAST objects, while `rmin20` and
+`wall_rmin20` undershoot the VIDE object count and lose many VIDE-to-VAST center
+matches.
+
+The Vdn/SVdW reference is documented under `papers/`.
 
 ## Current Development Scope
 
@@ -358,6 +449,7 @@ design primitives and the first Milestone 3 algorithm slice:
 - `n256` finder-vs-VIDE per-bin void size-function comparison scripts;
 - `n256` finder-vs-VIDE slice plots for object-level visual checks;
 - fixed-bin `n256` VSF and radius-summary outputs for paper-style comparisons;
+- VAST.VoidFinder runner and VAST-vs-VIDE `n256` VSF/slab diagnostics;
 - `emcee` posterior sampling and contour diagnostics for geometry-only VSF,
   geometry-only joint VSF+center, and full scored-merge `n256` calibration;
 - Vdn/SVdW theoretical void size-function overlays from PINOCCHIO cosmology

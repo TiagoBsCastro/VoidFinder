@@ -94,10 +94,12 @@ def test_joint_best_fit_command_preserves_resolved_vide_paths(tmp_path) -> None:
             vide_macrocenters_a=tmp_path / "trimmed_nodencut_macrocenters_all_a.out",
             vide_macrocenters_b=tmp_path / "trimmed_nodencut_macrocenters_all_b.out",
             vide_variant="trimmed_nodencut",
+            position_mode="initial",
         ),
     )
 
     command = command_path.read_text(encoding="utf-8")
     assert "trimmed_nodencut_voidDesc_all_a.out" in command
     assert "--vide-variant trimmed_nodencut" in command
-    assert "n256_joint_best_fit_paper_bins_vsf_trimmed_nodencut.csv" in command
+    assert "--position-mode initial" in command
+    assert "n256_joint_best_fit_paper_bins_vsf_trimmed_nodencut_initial.csv" in command

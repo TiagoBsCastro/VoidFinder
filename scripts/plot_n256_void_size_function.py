@@ -7,7 +7,9 @@ import argparse
 from pathlib import Path
 
 from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
     VIDE_CATALOG_VARIANTS,
+    pinocchio_position_mode_output_suffix,
     resolve_vide_catalog_variant_path,
     vide_catalog_variant_output_suffix,
 )
@@ -38,6 +40,12 @@ def parse_args() -> argparse.Namespace:
         description="Plot n256 finder-vs-VIDE void size functions."
     )
     parser.add_argument("--box-size", type=float, default=256.0, help="Box size in Mpc/h.")
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument(
         "--rho-bar",
         type=float,
@@ -142,7 +150,11 @@ def _run_args(args: argparse.Namespace) -> list[str]:
         suffix = "paper_bins_theory_vsf" if args.include_theory else "paper_bins_vsf"
     else:
         suffix = "finder_vide_theory_vsf" if args.include_theory else "finder_vide_vsf"
-    output_stem = args.output_dir / f"n256_{suffix}{vide_catalog_variant_output_suffix(args.vide_variant)}"
+    output_stem = args.output_dir / (
+        f"n256_{suffix}"
+        f"{vide_catalog_variant_output_suffix(args.vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(args.position_mode)}"
+    )
     command = [
         N256_RUN["catalog_a"],
         N256_RUN["catalog_b"],
@@ -150,6 +162,8 @@ def _run_args(args: argparse.Namespace) -> list[str]:
         str(resolve_vide_catalog_variant_path(N256_RUN["vide_b"], args.vide_variant)),
         "--box-size",
         str(args.box_size),
+        "--position-mode",
+        args.position_mode,
         "--rho-bar",
         str(args.rho_bar),
         "--linking-factor",
@@ -183,7 +197,11 @@ def _run_args(args: argparse.Namespace) -> list[str]:
         "--binning",
         binning,
         "--label",
-        "n256 scored merge" if args.merge_score_mode == "weighted" else "n256 geometry-only",
+        (
+            f"n256 scored merge ({args.position_mode})"
+            if args.merge_score_mode == "weighted"
+            else f"n256 geometry-only ({args.position_mode})"
+        ),
         "--output-csv",
         str(output_stem.with_suffix(".csv")),
         "--output-plot",

@@ -16,6 +16,7 @@ def test_run_config_validates_catalog_settings() -> None:
 
     assert config.name == "small-test"
     assert config.catalog.format == "pinocchio_halo_ascii"
+    assert config.catalog.position_mode == "final"
     assert config.catalog.wrap_positions is True
 
 

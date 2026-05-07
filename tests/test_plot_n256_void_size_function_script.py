@@ -14,6 +14,7 @@ def make_args(*, include_theory: bool) -> argparse.Namespace:
         bin_max=None,
         paper_bins=False,
         include_theory=include_theory,
+        position_mode="final",
         vide_variant="all",
         output_dir=Path("runs/void-statistics"),
         linking_factor=N256_RUN["linking_factor"],
@@ -59,3 +60,13 @@ def test_plot_driver_can_switch_vide_variant() -> None:
         for entry in command
     )
     assert "runs/void-statistics/n256_finder_vide_vsf_trimmed_nodencut.csv" in command
+
+
+def test_plot_driver_can_switch_position_mode() -> None:
+    args = make_args(include_theory=False)
+    args.position_mode = "initial"
+
+    command = _run_args(args)
+
+    assert command[command.index("--position-mode") + 1] == "initial"
+    assert "runs/void-statistics/n256_finder_vide_vsf_initial.csv" in command

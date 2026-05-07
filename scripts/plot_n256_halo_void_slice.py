@@ -15,7 +15,9 @@ from numpy.typing import NDArray
 
 from pinocchio_voids.calibration import mean_halo_spacing_mpc_h
 from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
     VIDE_CATALOG_VARIANTS,
+    pinocchio_position_mode_output_suffix,
     read_paired_pinocchio_halo_catalogs,
     read_vide_input_tracers,
     read_vide_void_zones,
@@ -120,6 +122,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Joint MCMC summary CSV used for default finder parameters when present.",
     )
     parser.add_argument("--box-size", type=float, default=256.0)
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument("--rho-bar", type=float, default=8.63025e10)
     linking = parser.add_mutually_exclusive_group()
     linking.add_argument("--linking-length", type=float)
@@ -303,6 +311,7 @@ def select_void_rows_for_halo_slice(
     selected = VoidSliceRows(
         method=rows.method,
         target=rows.target,
+        position_mode=rows.position_mode,
         positions_mpc_h=rows.positions_mpc_h[mask],
         radii_mpc_h=rows.radii_mpc_h[mask],
         void_ids=rows.void_ids[mask],
@@ -375,7 +384,7 @@ def vide_member_positions_for_rows(
     return positions[mask]
 
 
-def _all_finder_rows(result, *, target: str) -> VoidSliceRows:
+def _all_finder_rows(result, *, target: str, position_mode: str) -> VoidSliceRows:
     positions = np.asarray(
         [void.center_mpc_h for void in result.voids],
         dtype=np.float64,
@@ -385,6 +394,7 @@ def _all_finder_rows(result, *, target: str) -> VoidSliceRows:
     return VoidSliceRows(
         method="finder",
         target=target,
+        position_mode=position_mode,
         positions_mpc_h=positions,
         radii_mpc_h=radii,
         void_ids=void_ids,
@@ -410,6 +420,7 @@ def _all_vide_rows(
     return VoidSliceRows(
         method="vide",
         target=target,
+        position_mode=args.position_mode,
         positions_mpc_h=spatial.positions_mpc_h,
         radii_mpc_h=spatial.radii_mpc_h,
         void_ids=spatial.void_ids,
@@ -442,6 +453,7 @@ def write_void_csv(
             fieldnames=[
                 "method",
                 "target",
+                "position_mode",
                 "void_id",
                 "file_void_id",
                 "x_mpc_h",
@@ -467,6 +479,7 @@ def write_void_csv(
                 {
                     "method": rows.method,
                     "target": rows.target,
+                    "position_mode": rows.position_mode,
                     "void_id": int(void_id),
                     "file_void_id": "" if int(file_void_id) < 0 else int(file_void_id),
                     "x_mpc_h": float(position[0]),
@@ -561,7 +574,8 @@ def write_halo_void_plot(
     axis.set_title(
         f"Target {target}: {method} voids over halo {args.slice_axis}-slice\n"
         f"{args.slice_center:g} +/- {0.5 * args.slice_thickness:g} Mpc/h, "
-        f"halos {len(halo_positions_mpc_h)}, voids {len(void_rows.radii_mpc_h)}"
+        f"halos {len(halo_positions_mpc_h)} ({args.position_mode}), "
+        f"voids {len(void_rows.radii_mpc_h)}"
     )
     handles = [Patch(facecolor="none", edgecolor="black", label="halos")]
     if draw_circles:
@@ -576,7 +590,10 @@ def write_halo_void_plot(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    suffix = vide_catalog_variant_output_suffix(args.vide_variant)
+    suffix = (
+        f"{vide_catalog_variant_output_suffix(args.vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(args.position_mode)}"
+    )
     if suffix and args.output_prefix == DEFAULT_OUTPUT_PREFIX:
         args.output_prefix = f"{args.output_prefix}{suffix}"
     summary = read_calibration_best_fit(args.calibration_summary)
@@ -585,6 +602,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.catalog_a,
         args.catalog_b,
         box_size_mpc_h=args.box_size,
+        position_mode=args.position_mode,
     )
     if args.linking_length is not None:
         linking_a = float(args.linking_length)
@@ -617,7 +635,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             box_size_mpc_h=args.box_size,
         )
         halo_positions = target_catalog.positions_mpc_h[mask]
-        finder_all_rows = _all_finder_rows(target_result, target=target)
+        finder_all_rows = _all_finder_rows(
+            target_result,
+            target=target,
+            position_mode=args.position_mode,
+        )
         vide_desc, vide_centers, vide_macrocenters = _target_paths(args, target)
         vide_desc, vide_centers, vide_macrocenters = resolve_target_vide_paths(
             desc_path=vide_desc,

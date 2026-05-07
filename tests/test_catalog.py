@@ -20,6 +20,7 @@ def test_halo_catalog_validates_and_freezes_arrays() -> None:
 
     assert len(catalog) == 2
     assert catalog.position_unit == "Mpc/h"
+    assert catalog.position_mode == "final"
     assert catalog.mass_unit == "Msun/h"
     assert catalog.velocity_unit == "km/s"
     assert not catalog.positions_mpc_h.flags.writeable
@@ -53,6 +54,7 @@ def test_halo_catalog_converts_to_tracer_catalog() -> None:
     tracers = halos.to_tracer_catalog()
 
     assert isinstance(tracers, TracerCatalog)
+    assert tracers.position_mode == halos.position_mode
     assert tracers.weight_unit == "Msun/h"
     np.testing.assert_allclose(tracers.weights, halos.masses_msun_h)
     np.testing.assert_allclose(tracers.positions_mpc_h, halos.positions_mpc_h)

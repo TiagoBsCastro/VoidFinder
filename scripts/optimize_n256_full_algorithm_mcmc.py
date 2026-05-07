@@ -20,7 +20,9 @@ from pinocchio_voids.calibration import (
     score_paired_joint_calibration,
 )
 from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
     VIDE_CATALOG_VARIANTS,
+    pinocchio_position_mode_output_suffix,
     read_paired_pinocchio_halo_catalogs,
     read_vide_void_desc,
     resolve_vide_catalog_variant_path,
@@ -131,6 +133,7 @@ class N256FullMcmcPaths:
     vide_macrocenters_a: Path = DEFAULT_VIDE_MACROCENTERS_A
     vide_macrocenters_b: Path = DEFAULT_VIDE_MACROCENTERS_B
     vide_variant: str = "all"
+    position_mode: str = "final"
 
 
 @dataclass(frozen=True)
@@ -251,6 +254,7 @@ class N256FullLogPosterior:
             paths.catalog_a,
             paths.catalog_b,
             box_size_mpc_h=settings.box_size_mpc_h,
+            position_mode=paths.position_mode,
         )
         self.reference_a = read_vide_void_desc(paths.vide_a)
         self.reference_b = read_vide_void_desc(paths.vide_b)
@@ -364,12 +368,18 @@ def write_samples_csv(
     samples: NDArray[np.float64],
     log_probability: NDArray[np.float64],
     blobs: NDArray,
+    *,
+    position_mode: str,
 ) -> None:
     rows = []
     for index, (sample, log_prob, blob) in enumerate(
         zip(samples, log_probability, blobs, strict=True)
     ):
-        row: dict[str, object] = {"sample": index, "log_probability": float(log_prob)}
+        row: dict[str, object] = {
+            "sample": index,
+            "position_mode": position_mode,
+            "log_probability": float(log_prob),
+        }
         row.update(
             {name: float(value) for name, value in zip(PARAMETER_NAMES, sample, strict=True)}
         )
@@ -389,11 +399,13 @@ def write_summary_csv(
     best_log_probability: float,
     best_blob,
     percentiles: NDArray[np.float64],
+    position_mode: str,
 ) -> None:
     rows = []
     for column, name in enumerate(PARAMETER_NAMES):
         row = {
             "parameter": name,
+            "position_mode": position_mode,
             "best_fit": float(best_fit[column]),
             "p16": float(percentiles[0, column]),
             "p50": float(percentiles[1, column]),
@@ -533,7 +545,10 @@ def write_best_fit_command(
     vide_center_kind: str,
     paths: N256FullMcmcPaths,
 ) -> None:
-    suffix = vide_catalog_variant_output_suffix(paths.vide_variant)
+    suffix = (
+        f"{vide_catalog_variant_output_suffix(paths.vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(paths.position_mode)}"
+    )
     flags = _full_parameter_flags(best_fit)
     command = f"""#!/usr/bin/env bash
 set -euo pipefail
@@ -544,6 +559,7 @@ set -euo pipefail
   {paths.vide_a} \\
   {paths.vide_b} \\
   --box-size 256 \\
+  --position-mode {paths.position_mode} \\
   --rho-bar 8.63025e10 \\
 {flags} \\
   --min-cluster-members 2 \\
@@ -558,6 +574,8 @@ set -euo pipefail
   --output-plot runs/void-statistics/n256_full_best_fit_paper_bins_vsf{suffix}.png
 
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/match_n256_void_centers.py \\
+  --catalog-a {paths.catalog_a} \\
+  --catalog-b {paths.catalog_b} \\
   --vide-desc-a {paths.vide_a} \\
   --vide-desc-b {paths.vide_b} \\
   --vide-centers-a {paths.vide_centers_a} \\
@@ -565,13 +583,17 @@ set -euo pipefail
   --vide-macrocenters-a {paths.vide_macrocenters_a} \\
   --vide-macrocenters-b {paths.vide_macrocenters_b} \\
   --vide-variant {paths.vide_variant} \\
+  --position-mode {paths.position_mode} \\
 {flags} \\
   --vide-center-kind {vide_center_kind} \\
   --output-csv runs/void-statistics/n256_full_best_fit_center_matches{suffix}.csv \\
   --summary-csv runs/void-statistics/n256_full_best_fit_center_match_summary{suffix}.csv
 
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n256_halo_void_slice.py \\
+  --catalog-a {paths.catalog_a} \\
+  --catalog-b {paths.catalog_b} \\
   --vide-variant {paths.vide_variant} \\
+  --position-mode {paths.position_mode} \\
 {flags} \\
   --slice-axis z \\
   --slice-center 128 \\
@@ -604,6 +626,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--vide-centers-b", type=Path, default=DEFAULT_VIDE_CENTERS_B)
     parser.add_argument("--vide-macrocenters-a", type=Path, default=DEFAULT_VIDE_MACROCENTERS_A)
     parser.add_argument("--vide-macrocenters-b", type=Path, default=DEFAULT_VIDE_MACROCENTERS_B)
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument(
         "--vide-variant",
         choices=VIDE_CATALOG_VARIANTS,
@@ -689,7 +717,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if args.steps <= args.burn_in:
         raise SystemExit("--steps must be larger than --burn-in")
-    suffix = vide_catalog_variant_output_suffix(args.vide_variant)
+    suffix = (
+        f"{vide_catalog_variant_output_suffix(args.vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(args.position_mode)}"
+    )
     if suffix and args.output_prefix == DEFAULT_OUTPUT_PREFIX:
         args.output_prefix = args.output_prefix.with_name(f"{args.output_prefix.name}{suffix}")
     rng = np.random.default_rng(args.seed)
@@ -710,6 +741,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.vide_variant,
         ),
         vide_variant=args.vide_variant,
+        position_mode=args.position_mode,
     )
     settings = FullMcmcSettings(
         reject_degenerate=not args.allow_degenerate,
@@ -771,6 +803,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         center_nu=args.center_nu,
         vide_center_kind=args.vide_center_kind,
         vide_variant=args.vide_variant,
+        position_mode=args.position_mode,
         vide_a=str(paths.vide_a),
         vide_b=str(paths.vide_b),
         vide_centers_a=str(paths.vide_centers_a),
@@ -788,6 +821,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         samples,
         sample_log_prob,
         sample_blobs,
+        position_mode=args.position_mode,
     )
     write_summary_csv(
         prefix.with_name(prefix.name + "_summary.csv"),
@@ -795,6 +829,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         best_log_probability=best_log_probability,
         best_blob=best_blob,
         percentiles=percentiles,
+        position_mode=args.position_mode,
     )
     finite_samples = samples[np.isfinite(sample_log_prob)]
     write_trace_plot(prefix.with_name(prefix.name + "_trace.png"), chain)
@@ -817,6 +852,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  vsf_log_likelihood: {float(best_blob['vsf_log_likelihood']):.8g}")
     print(f"  center_log_likelihood: {float(best_blob['center_log_likelihood']):.8g}")
     print(f"  vide_variant: {args.vide_variant}")
+    print(f"  position_mode: {args.position_mode}")
     print(f"Wrote products with prefix {prefix}")
     return 0
 

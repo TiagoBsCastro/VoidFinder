@@ -90,6 +90,26 @@ Completed so far:
   resolved VIDE target is preserved.
 - Removed deprecated grid-search calibration scripts in favor of MCMC-only
   calibration workflows.
+- Removed deprecated one-off theory-debug and generic VIDE-only VSF plotting
+  scripts in favor of the active n256 finder-vs-VIDE comparison workflow.
+- Added a VAST.VoidFinder external-comparison workflow for `n256`, including
+  final-position input auditing, normalized VAST maximal/hole catalogs, and
+  VAST-vs-VIDE `all` VSF/slab diagnostics with both maximal-radius and
+  estimated union-`R_eff` radius definitions.
+- Ran VAST.VoidFinder on both active `n256` final-position halo catalogs:
+  VAST found 1134/1137 maximal voids for targets A/B, compared with 121/124
+  VIDE `all` voids. The first diagnostic products are
+  `runs/void-statistics/n256_vast_vide_all_*`.
+- Added VAST/VIDE mismatch investigation scripts:
+  `scripts/audit_n256_vast_vide_inputs.py` and
+  `scripts/debug_n256_vast_vide_mismatch.py`.
+- Verified the VAST/VIDE input tracers match to roundoff, so the large VSF
+  mismatch is not caused by initial/final position confusion or a different
+  tracer file.
+- Added VAST sensitivity runs for `--min-maximal-radius` values 15, 20, and 25,
+  plus VAST wall/field preprocessing. Current evidence: `rmin15` improves VAST
+  radius medians but still overproduces objects, while `rmin20` and
+  `wall_rmin20` undershoot object counts and weaken VIDE-to-VAST matching.
 - Cleaned deprecated ignored products so `runs/void-statistics` keeps only
   current `n256` VSF and MCMC products.
 
@@ -151,6 +171,21 @@ Completed so far:
    - Plan a paper-like local VIDE rerun only if post-processing cannot make the
      current references comparable.
 
+8. Interpret the VAST.VoidFinder comparison.
+   - Inspect `n256_vast_vide_input_audit.csv` first; it currently rules out
+     tracer-input mismatch.
+   - Inspect `n256_vast_vide_mismatch_radius_summary.csv` and
+     `n256_vast_vide_mismatch_nearest_match_summary.csv` for all VIDE variants.
+   - Compare the threshold products:
+     `n256_vast_rmin15_vide_mismatch_*`,
+     `n256_vast_rmin20_vide_mismatch_*`, and
+     `n256_vast_wall_rmin20_vide_mismatch_*`.
+   - Treat `min_maximal_radius` as a coarse catalog-definition knob, not a full
+     solution: it can match radius medians or counts, but not both object
+     counts and center matches simultaneously.
+   - Next compare VAST against VIDE member-zone geometry or another watershed
+     catalog before using VAST as a calibration target.
+
 ## Test Plan
 
 - Keep the full package test suite passing.
@@ -162,7 +197,11 @@ Completed so far:
   center-match likelihoods, the short VSF, joint, and full MCMC optimizer smoke
   paths, VIDE center and membership parsing, region audits, and the n256
   slice-plot and center-matching smoke paths, including halo-background
-  overlays and VIDE variant resolution.
+  overlays and VIDE variant resolution. New VAST tests cover final-position
+  input selection, VAST table normalization, VAST run-label variants,
+  union-volume `R_eff` estimation, slab intersection selection, tracer-input
+  audits, and VAST/VIDE nearest-center mismatch metrics without requiring VAST
+  itself.
 - Use ignored local integration checks only for active `n256` paths.
 
 ## Local Reference Data
@@ -175,7 +214,10 @@ Completed so far:
   - `runs/vide-lowres/n256_paired`
 - Active ignored VSF products live under `runs/void-statistics/` and should be
   limited to current `n256` finder/VIDE, paper-bin, MCMC best-fit, and MCMC
-  diagnostic outputs.
+  diagnostic outputs, plus current VAST-vs-VIDE comparison products.
+- Active ignored VAST comparison outputs:
+  - `runs/vast-voidfinder/n256`
+  - `runs/vast-voidfinder/n256_paired`
 - Generated `runs/` data must remain ignored. Commit only code, docs, tests,
   and tiny deterministic fixtures.
 
@@ -202,4 +244,14 @@ Use the named Miniforge environment:
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n256_halo_void_slice.py --slice-axis z --slice-center 128 --slice-thickness 20 --vide-variant untrimmed --vide-overlay both
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/debug_n256_vide_region.py --x 100 --y 100 --z 128 --slice-axis z --slice-center 128 --slice-thickness 20
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/match_n256_void_centers.py
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/run_n256_vast_voidfinder.py --help
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/plot_n256_vast_vide_diagnostics.py --help
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/audit_n256_vast_vide_inputs.py --help
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/debug_n256_vast_vide_mismatch.py --help
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/audit_n256_vast_vide_inputs.py
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/debug_n256_vast_vide_mismatch.py --vide-variant all
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/run_n256_vast_voidfinder.py --target both --num-cpus 8
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/run_n256_vast_voidfinder.py --target both --num-cpus 8 --min-maximal-radius 15 --min-maximal-radius 20 --min-maximal-radius 25
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/run_n256_vast_voidfinder.py --target both --num-cpus 8 --wall-field-separation --min-maximal-radius 10 --min-maximal-radius 15 --min-maximal-radius 20 --min-maximal-radius 25
+/home/tcastro/miniforge3/envs/.conda-vast/bin/python scripts/plot_n256_vast_vide_diagnostics.py --vide-variant all --radius-mode both --target both --slice-axis z --slice-center 128 --slice-thickness 20
 ```

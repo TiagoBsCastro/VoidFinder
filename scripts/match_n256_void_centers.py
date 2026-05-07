@@ -14,7 +14,9 @@ from numpy.typing import NDArray
 
 from pinocchio_voids.calibration import mean_halo_spacing_mpc_h
 from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
     VIDE_CATALOG_VARIANTS,
+    pinocchio_position_mode_output_suffix,
     read_paired_pinocchio_halo_catalogs,
     vide_catalog_variant_output_suffix,
 )
@@ -56,6 +58,7 @@ except ModuleNotFoundError as exc:
 
 MATCH_COLUMNS = [
     "target",
+    "position_mode",
     "vide_center_kind",
     "vide_variant",
     "finder_void_id",
@@ -81,6 +84,7 @@ MATCH_COLUMNS = [
 
 SUMMARY_COLUMNS = [
     "target",
+    "position_mode",
     "vide_center_kind",
     "vide_variant",
     "finder_count",
@@ -131,6 +135,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="VIDE catalog variant used for voidDesc, centers, and macrocenters.",
     )
     parser.add_argument("--box-size", type=float, default=256.0)
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument("--rho-bar", type=float, default=8.63025e10)
     linking = parser.add_mutually_exclusive_group()
     linking.add_argument("--linking-length", type=float)
@@ -161,8 +171,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _default_output_paths(vide_center_kind: str, vide_variant: str) -> tuple[Path, Path]:
-    suffix = vide_catalog_variant_output_suffix(vide_variant)
+def _default_output_paths(
+    vide_center_kind: str,
+    vide_variant: str,
+    position_mode: str,
+) -> tuple[Path, Path]:
+    suffix = (
+        f"{vide_catalog_variant_output_suffix(vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(position_mode)}"
+    )
     if vide_center_kind == "macrocenter":
         return (
             Path(f"runs/void-statistics/n256_void_macrocenter_matches{suffix}.csv"),
@@ -211,6 +228,7 @@ def finder_spatial_catalog(result: DirectionalVoidFinderResult) -> FinderSpatial
 def build_match_rows(
     *,
     target: str,
+    position_mode: str,
     finder: FinderSpatialCatalog,
     vide,
     box_size_mpc_h: float,
@@ -242,6 +260,7 @@ def build_match_rows(
         rows.append(
             {
                 "target": target,
+                "position_mode": position_mode,
                 "vide_center_kind": vide.center_kind,
                 "vide_variant": vide_variant,
                 "finder_void_id": int(finder.void_ids[finder_index]),
@@ -272,6 +291,7 @@ def build_match_rows(
 def _summary_row(
     *,
     target: str,
+    position_mode: str,
     vide_center_kind: str,
     vide_variant: str = "all",
     finder_count: int,
@@ -281,6 +301,7 @@ def _summary_row(
     if not rows:
         return {
             "target": target,
+            "position_mode": position_mode,
             "vide_center_kind": vide_center_kind,
             "vide_variant": vide_variant,
             "finder_count": finder_count,
@@ -300,6 +321,7 @@ def _summary_row(
     over_min = np.asarray([float(row["distance_over_min_reff"]) for row in rows])
     return {
         "target": target,
+        "position_mode": position_mode,
         "vide_center_kind": vide_center_kind,
         "vide_variant": vide_variant,
         "finder_count": finder_count,
@@ -327,6 +349,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     default_output_csv, default_summary_csv = _default_output_paths(
         args.vide_center_kind,
         args.vide_variant,
+        args.position_mode,
     )
     output_csv = args.output_csv if args.output_csv is not None else default_output_csv
     summary_csv = args.summary_csv if args.summary_csv is not None else default_summary_csv
@@ -334,6 +357,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.catalog_a,
         args.catalog_b,
         box_size_mpc_h=args.box_size,
+        position_mode=args.position_mode,
     )
     linking_a, linking_b = _resolve_linking_lengths(args, paired)
     config = PairedVoidFinderConfig(
@@ -374,6 +398,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         target_rows = build_match_rows(
             target=target,
+            position_mode=args.position_mode,
             finder=finder,
             vide=vide,
             box_size_mpc_h=args.box_size,
@@ -381,6 +406,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         target_summary = _summary_row(
             target=target,
+            position_mode=args.position_mode,
             vide_center_kind=args.vide_center_kind,
             vide_variant=args.vide_variant,
             finder_count=len(finder.radii_mpc_h),

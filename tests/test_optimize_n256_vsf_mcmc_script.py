@@ -125,9 +125,11 @@ def test_best_fit_command_preserves_resolved_vide_paths(tmp_path) -> None:
             vide_a=tmp_path / "untrimmed_voidDesc_all_a.out",
             vide_b=tmp_path / "untrimmed_voidDesc_all_b.out",
             vide_variant="untrimmed",
+            position_mode="initial",
         ),
     )
 
     command = command_path.read_text(encoding="utf-8")
     assert "untrimmed_voidDesc_all_a.out" in command
-    assert "n256_mcmc_best_fit_paper_bins_vsf_untrimmed.csv" in command
+    assert "--position-mode initial" in command
+    assert "n256_mcmc_best_fit_paper_bins_vsf_untrimmed_initial.csv" in command

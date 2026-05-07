@@ -7,8 +7,11 @@ from pinocchio_voids.io.paired import (
 )
 from pinocchio_voids.io.pinocchio import (
     PINOCCHIO_HALO_COLUMN_NAMES,
+    PINOCCHIO_POSITION_MODES,
     PinocchioCatalogError,
     PinocchioHaloCatalog,
+    normalize_pinocchio_position_mode,
+    pinocchio_position_mode_output_suffix,
     pinocchio_to_halo_catalog,
     read_pinocchio_halo_catalog,
 )
@@ -38,6 +41,7 @@ from pinocchio_voids.io.vide import (
 
 __all__ = [
     "PINOCCHIO_HALO_COLUMN_NAMES",
+    "PINOCCHIO_POSITION_MODES",
     "PairedCatalogError",
     "PairedHaloCatalogs",
     "PinocchioCatalogError",
@@ -52,6 +56,8 @@ __all__ = [
     "VideVoidZoneCatalog",
     "VideZoneParticleCatalog",
     "normalize_vide_catalog_variant",
+    "normalize_pinocchio_position_mode",
+    "pinocchio_position_mode_output_suffix",
     "pinocchio_to_halo_catalog",
     "read_paired_pinocchio_halo_catalogs",
     "read_pinocchio_halo_catalog",

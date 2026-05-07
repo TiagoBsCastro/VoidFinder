@@ -94,6 +94,7 @@ def test_full_best_fit_command_includes_scored_merge_parameters(tmp_path) -> Non
             vide_macrocenters_a=tmp_path / "untrimmed_macrocenters_all_a.out",
             vide_macrocenters_b=tmp_path / "untrimmed_macrocenters_all_b.out",
             vide_variant="untrimmed",
+            position_mode="initial",
         ),
     )
 
@@ -104,4 +105,5 @@ def test_full_best_fit_command_includes_scored_merge_parameters(tmp_path) -> Non
     assert "--bridge-radius-factor 0.8" in command
     assert "--bridge-weight 1.2" in command
     assert "--compatibility-weight 0.4" in command
-    assert "n256_full_best_fit_paper_bins_vsf_untrimmed.csv" in command
+    assert "--position-mode initial" in command
+    assert "n256_full_best_fit_paper_bins_vsf_untrimmed_initial.csv" in command

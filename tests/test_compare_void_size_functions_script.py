@@ -69,6 +69,7 @@ def test_compare_void_size_functions_script_writes_finder_and_vide_csv(tmp_path,
     assert len(rows) == 8
     assert set(rows[0]) == {
         "label",
+        "position_mode",
         "source",
         "target",
         "bin_min_mpc_h",
@@ -83,6 +84,7 @@ def test_compare_void_size_functions_script_writes_finder_and_vide_csv(tmp_path,
         ("vide", "A"),
         ("vide", "B"),
     }
+    assert {row["position_mode"] for row in rows} == {"final"}
     counts = {}
     for row in rows:
         key = (row["source"], row["target"])
@@ -156,6 +158,7 @@ def test_compare_void_size_functions_script_accepts_fixed_linear_bins_and_summar
         ("vide", "A"),
         ("vide", "B"),
     }
+    assert {row["position_mode"] for row in summary_rows} == {"final"}
     vide_a = next(row for row in summary_rows if row["source"] == "vide" and row["target"] == "A")
     assert vide_a["count"] == "2"
     assert float(vide_a["median_mpc_h"]) == 1.5
@@ -174,6 +177,20 @@ def test_compare_void_size_functions_script_accepts_linking_factor(tmp_path, cap
     captured = capsys.readouterr()
     assert "Linking: factor=0.05" in captured.out
     assert output_csv.exists()
+
+
+def test_compare_void_size_functions_script_accepts_initial_position_mode(tmp_path) -> None:
+    output_csv = tmp_path / "vsf_initial.csv"
+    args = base_args(output_csv)
+    args.extend(["--position-mode", "initial"])
+
+    exit_code = main(args)
+
+    assert exit_code == 0
+    with output_csv.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert rows
+    assert {row["position_mode"] for row in rows} == {"initial"}
 
 
 def test_compare_void_size_functions_script_rejects_mixed_linking_modes(tmp_path) -> None:

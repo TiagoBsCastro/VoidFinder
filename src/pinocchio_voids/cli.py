@@ -106,6 +106,11 @@ def paired_prototype(
     catalog_a: Path,
     catalog_b: Path,
     box_size_mpc_h: float = typer.Option(..., "--box-size", help="Periodic box size in Mpc/h."),
+    position_mode: Literal["final", "initial"] = typer.Option(
+        "final",
+        "--position-mode",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    ),
     reference_rho_bar_msun_h_mpc3: float = typer.Option(
         ...,
         "--rho-bar",
@@ -213,6 +218,7 @@ def paired_prototype(
         catalog_a,
         catalog_b,
         box_size_mpc_h=box_size_mpc_h,
+        position_mode=position_mode,
     )
     if linking_factor is None:
         source_a_linking_length = linking_length_mpc_h
@@ -245,7 +251,7 @@ def paired_prototype(
         config=config,
     )
 
-    table = Table(title="Paired Prototype Summary")
+    table = Table(title=f"Paired Prototype Summary ({position_mode} positions)")
     table.add_column("Target")
     table.add_column("Source")
     table.add_column("Halos", justify="right")
@@ -310,6 +316,11 @@ def paired_sweep(
     vide_a: Path,
     vide_b: Path,
     box_size_mpc_h: float = typer.Option(..., "--box-size", help="Periodic box size in Mpc/h."),
+    position_mode: Literal["final", "initial"] = typer.Option(
+        "final",
+        "--position-mode",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    ),
     reference_rho_bar_msun_h_mpc3: float = typer.Option(
         ...,
         "--rho-bar",
@@ -372,6 +383,7 @@ def paired_sweep(
         catalog_a,
         catalog_b,
         box_size_mpc_h=box_size_mpc_h,
+        position_mode=position_mode,
     )
     reference_a = read_vide_void_desc(vide_a)
     reference_b = read_vide_void_desc(vide_b)
@@ -395,7 +407,7 @@ def paired_sweep(
         min_predicted_fraction=min_predicted_fraction,
     )
 
-    table = Table(title="Geometry Sweep")
+    table = Table(title=f"Geometry Sweep ({position_mode} positions)")
     table.add_column("Rank", justify="right")
     table.add_column("Mode")
     table.add_column("Link", justify="right")

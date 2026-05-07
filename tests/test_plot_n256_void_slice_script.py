@@ -134,4 +134,5 @@ def test_plot_void_slice_script_writes_csv_and_png(tmp_path) -> None:
 
     assert {row["method"] for row in rows} == {"finder", "vide"}
     assert {row["target"] for row in rows} == {"A"}
+    assert {row["position_mode"] for row in rows} == {"final"}
     assert any(row["file_void_id"] == "0" for row in rows)

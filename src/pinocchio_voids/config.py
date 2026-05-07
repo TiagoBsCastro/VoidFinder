@@ -26,9 +26,13 @@ class PinocchioCatalogConfig(BaseModel):
     mass_unit: str = Field(default="Msun/h")
     position_unit: str = Field(default="Mpc/h")
     velocity_unit: str = Field(default="km/s")
+    position_mode: Literal["final", "initial"] = Field(
+        default="final",
+        description="PINOCCHIO coordinate columns used as canonical halo positions.",
+    )
     wrap_positions: bool = Field(
         default=True,
-        description="Whether final positions should be wrapped into the periodic box.",
+        description="Whether selected positions should be wrapped into the periodic box.",
     )
 
 

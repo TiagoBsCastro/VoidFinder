@@ -28,6 +28,7 @@ def test_void_region_rows_reports_3d_and_projected_coverage() -> None:
         method="vide",
         target="A",
         catalog_variant="default",
+        position_mode="final",
         center_kind="center",
         positions_mpc_h=np.array([[0.0, 0.0, 0.0], [5.0, 0.0, 0.0]]),
         radii_mpc_h=np.array([2.0, 1.0]),
@@ -54,6 +55,7 @@ def test_void_region_rows_reports_3d_and_projected_coverage() -> None:
 def test_halo_region_rows_counts_periodic_projected_disks() -> None:
     rows = halo_region_rows(
         target="A",
+        position_mode="final",
         positions_mpc_h=np.array(
             [[9.8, 0.0, 0.0], [0.4, 0.0, 0.0], [5.0, 5.0, 0.0], [0.0, 0.0, 3.0]]
         ),
@@ -66,6 +68,7 @@ def test_halo_region_rows_counts_periodic_projected_disks() -> None:
     )
 
     assert rows[0]["halo_slab_count"] == 3
+    assert rows[0]["position_mode"] == "final"
     assert rows[0]["halo_count"] == 2
 
 
@@ -123,3 +126,4 @@ def test_debug_region_script_writes_csv_with_small_fixtures(tmp_path) -> None:
     assert exit_code == 0
     rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
     assert {row["row_type"] for row in rows} == {"halo_count", "void_margin"}
+    assert {row["position_mode"] for row in rows} == {"final"}

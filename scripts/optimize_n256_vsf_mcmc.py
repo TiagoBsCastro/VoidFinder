@@ -20,7 +20,9 @@ from pinocchio_voids.calibration import (
     score_paired_vsf_likelihood,
 )
 from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
     VIDE_CATALOG_VARIANTS,
+    pinocchio_position_mode_output_suffix,
     read_paired_pinocchio_halo_catalogs,
     read_vide_void_desc,
     resolve_vide_catalog_variant_path,
@@ -68,6 +70,7 @@ class N256McmcPaths:
     vide_a: Path = DEFAULT_VIDE_A
     vide_b: Path = DEFAULT_VIDE_B
     vide_variant: str = "all"
+    position_mode: str = "final"
 
 
 @dataclass(frozen=True)
@@ -163,6 +166,7 @@ class N256VsfLogPosterior:
             paths.catalog_a,
             paths.catalog_b,
             box_size_mpc_h=settings.box_size_mpc_h,
+            position_mode=paths.position_mode,
         )
         self.reference_a = read_vide_void_desc(paths.vide_a)
         self.reference_b = read_vide_void_desc(paths.vide_b)
@@ -288,10 +292,16 @@ def write_samples_csv(
     path: Path,
     samples: NDArray[np.float64],
     log_probability: NDArray[np.float64],
+    *,
+    position_mode: str,
 ) -> None:
     rows = []
     for index, (sample, log_prob) in enumerate(zip(samples, log_probability, strict=True)):
-        row: dict[str, object] = {"sample": index, "log_probability": float(log_prob)}
+        row: dict[str, object] = {
+            "sample": index,
+            "position_mode": position_mode,
+            "log_probability": float(log_prob),
+        }
         row.update(
             {name: float(value) for name, value in zip(PARAMETER_NAMES, sample, strict=True)}
         )
@@ -309,12 +319,14 @@ def write_summary_csv(
     best_fit: NDArray[np.float64],
     best_log_probability: float,
     percentiles: NDArray[np.float64],
+    position_mode: str,
 ) -> None:
     rows = []
     for column, name in enumerate(PARAMETER_NAMES):
         rows.append(
             {
                 "parameter": name,
+                "position_mode": position_mode,
                 "best_fit": float(best_fit[column]),
                 "p16": float(percentiles[0, column]),
                 "p50": float(percentiles[1, column]),
@@ -433,7 +445,10 @@ def write_best_fit_command(
     linking_factor, radius_a0, radius_alpha, adjacency_factor = (
         float(value) for value in best_fit
     )
-    suffix = vide_catalog_variant_output_suffix(paths.vide_variant)
+    suffix = (
+        f"{vide_catalog_variant_output_suffix(paths.vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(paths.position_mode)}"
+    )
     command = f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -443,6 +458,7 @@ set -euo pipefail
   {paths.vide_a} \\
   {paths.vide_b} \\
   --box-size 256 \\
+  --position-mode {paths.position_mode} \\
   --rho-bar 8.63025e10 \\
   --linking-factor {linking_factor:.8g} \\
   --min-cluster-members 2 \\
@@ -480,6 +496,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--catalog-b", type=Path, default=DEFAULT_CATALOG_B)
     parser.add_argument("--vide-a", type=Path, default=DEFAULT_VIDE_A)
     parser.add_argument("--vide-b", type=Path, default=DEFAULT_VIDE_B)
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument(
         "--vide-variant",
         choices=VIDE_CATALOG_VARIANTS,
@@ -544,7 +566,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if args.steps <= args.burn_in:
         raise SystemExit("--steps must be larger than --burn-in")
-    suffix = vide_catalog_variant_output_suffix(args.vide_variant)
+    suffix = (
+        f"{vide_catalog_variant_output_suffix(args.vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(args.position_mode)}"
+    )
     if suffix and args.output_prefix == DEFAULT_OUTPUT_PREFIX:
         args.output_prefix = args.output_prefix.with_name(f"{args.output_prefix.name}{suffix}")
     rng = np.random.default_rng(args.seed)
@@ -555,6 +580,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         vide_a=resolve_vide_catalog_variant_path(args.vide_a, args.vide_variant),
         vide_b=resolve_vide_catalog_variant_path(args.vide_b, args.vide_variant),
         vide_variant=args.vide_variant,
+        position_mode=args.position_mode,
     )
     settings = VsfMcmcSettings(reject_degenerate=not args.allow_degenerate)
     initial_positions = initial_walker_positions(
@@ -596,15 +622,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         burn_in=args.burn_in,
         thin=args.thin,
         vide_variant=args.vide_variant,
+        position_mode=args.position_mode,
         vide_a=str(paths.vide_a),
         vide_b=str(paths.vide_b),
     )
-    write_samples_csv(prefix.with_name(prefix.name + "_samples.csv"), samples, sample_log_prob)
+    write_samples_csv(
+        prefix.with_name(prefix.name + "_samples.csv"),
+        samples,
+        sample_log_prob,
+        position_mode=args.position_mode,
+    )
     write_summary_csv(
         prefix.with_name(prefix.name + "_summary.csv"),
         best_fit=best_fit,
         best_log_probability=best_log_probability,
         percentiles=percentiles,
+        position_mode=args.position_mode,
     )
     write_trace_plot(prefix.with_name(prefix.name + "_trace.png"), chain)
     write_contour_plot(
@@ -623,6 +656,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"  {name}: {value:.8g}")
     print(f"  log_probability: {best_log_probability:.8g}")
     print(f"  vide_variant: {args.vide_variant}")
+    print(f"  position_mode: {args.position_mode}")
     print(f"Wrote products with prefix {prefix}")
     return 0
 

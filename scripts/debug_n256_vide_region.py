@@ -15,7 +15,9 @@ from numpy.typing import NDArray
 from pinocchio_voids.calibration import mean_halo_spacing_mpc_h
 from pinocchio_voids.geometry import periodic_distance
 from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
     VIDE_CATALOG_VARIANTS,
+    pinocchio_position_mode_output_suffix,
     read_paired_pinocchio_halo_catalogs,
     resolve_vide_catalog_variant_path,
 )
@@ -66,6 +68,7 @@ class SpatialVoidCatalog:
     method: str
     target: str
     catalog_variant: str
+    position_mode: str
     center_kind: str
     positions_mpc_h: NDArray[np.float64]
     radii_mpc_h: NDArray[np.float64]
@@ -105,6 +108,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="Joint MCMC summary CSV used for default finder parameters when present.",
     )
     parser.add_argument("--box-size", type=float, default=256.0)
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument("--rho-bar", type=float, default=8.63025e10)
     linking = parser.add_mutually_exclusive_group()
     linking.add_argument("--linking-length", type=float)
@@ -204,6 +213,7 @@ def projected_sphere_radii(
 def halo_region_rows(
     *,
     target: str,
+    position_mode: str,
     positions_mpc_h: NDArray[np.float64],
     point_mpc_h: NDArray[np.float64],
     slice_axis: str,
@@ -238,6 +248,7 @@ def halo_region_rows(
                 "target": target,
                 "method": "halos",
                 "catalog_variant": "",
+                "position_mode": position_mode,
                 "center_kind": "",
                 "metric": f"projected_disk_{float(radius):g}",
                 "rank": "",
@@ -313,6 +324,7 @@ def void_region_rows(
                 "target": catalog.target,
                 "method": catalog.method,
                 "catalog_variant": catalog.catalog_variant,
+                "position_mode": catalog.position_mode,
                 "center_kind": catalog.center_kind,
                 "metric": metric,
                 "rank": int(sum(1 for m, _ in selected[: selected.index((metric, index))] if m == metric) + 1),
@@ -339,7 +351,12 @@ def void_region_rows(
     return rows
 
 
-def _spatial_from_finder_result(result, *, target: str) -> SpatialVoidCatalog:
+def _spatial_from_finder_result(
+    result,
+    *,
+    target: str,
+    position_mode: str,
+) -> SpatialVoidCatalog:
     positions = np.asarray([void.center_mpc_h for void in result.voids], dtype=np.float64).reshape((-1, 3))
     radii = np.asarray([void.effective_radius_mpc_h for void in result.voids], dtype=np.float64)
     void_ids = np.asarray([void.id for void in result.voids], dtype=np.int64)
@@ -347,6 +364,7 @@ def _spatial_from_finder_result(result, *, target: str) -> SpatialVoidCatalog:
         method="finder",
         target=target,
         catalog_variant="",
+        position_mode=position_mode,
         center_kind="center",
         positions_mpc_h=positions,
         radii_mpc_h=radii,
@@ -365,6 +383,7 @@ def _spatial_from_vide(
         method="vide",
         target=target,
         catalog_variant=catalog_variant,
+        position_mode="final",
         center_kind=spatial.center_kind,
         positions_mpc_h=spatial.positions_mpc_h,
         radii_mpc_h=spatial.radii_mpc_h,
@@ -421,8 +440,16 @@ def _run_finder_spatial_catalogs(args: argparse.Namespace, paired) -> dict[str, 
     )
     result = run_paired_halo_void_finder(paired.catalog_a, paired.catalog_b, config=config)
     return {
-        "A": _spatial_from_finder_result(result.voids_a, target="A"),
-        "B": _spatial_from_finder_result(result.voids_b, target="B"),
+        "A": _spatial_from_finder_result(
+            result.voids_a,
+            target="A",
+            position_mode=args.position_mode,
+        ),
+        "B": _spatial_from_finder_result(
+            result.voids_b,
+            target="B",
+            position_mode=args.position_mode,
+        ),
     }
 
 
@@ -492,10 +519,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     point = point_from_args(args)
     halo_radii = args.halo_radius if args.halo_radius is not None else [10.0, 20.0, 30.0, 40.0]
     variants = args.vide_variant if args.vide_variant is not None else list(VIDE_CATALOG_VARIANTS)
+    if (
+        args.output_csv == Path("runs/void-statistics/n256_vide_region_debug.csv")
+        and args.position_mode != "final"
+    ):
+        args.output_csv = args.output_csv.with_name(
+            f"{args.output_csv.stem}{pinocchio_position_mode_output_suffix(args.position_mode)}"
+            f"{args.output_csv.suffix}"
+        )
     paired = read_paired_pinocchio_halo_catalogs(
         args.catalog_a,
         args.catalog_b,
         box_size_mpc_h=args.box_size,
+        position_mode=args.position_mode,
     )
     requested_targets = ("A", "B") if args.target == "both" else (args.target,)
     finder_catalogs = {} if args.skip_finder else _run_finder_spatial_catalogs(args, paired)
@@ -506,6 +542,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         rows.extend(
             halo_region_rows(
                 target=target,
+                position_mode=args.position_mode,
                 positions_mpc_h=target_catalog.positions_mpc_h,
                 point_mpc_h=point,
                 slice_axis=args.slice_axis,

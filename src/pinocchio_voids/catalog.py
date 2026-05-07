@@ -59,6 +59,7 @@ class TracerCatalog:
     box_size_mpc_h: float
     velocities_km_s: ArrayLike | None = None
     weights: ArrayLike | None = None
+    position_mode: str = "final"
     position_unit: str = "Mpc/h"
     velocity_unit: str = "km/s"
     weight_unit: str = "dimensionless"
@@ -87,6 +88,7 @@ class TracerCatalog:
         object.__setattr__(self, "positions_mpc_h", positions)
         object.__setattr__(self, "velocities_km_s", velocities)
         object.__setattr__(self, "weights", weights)
+        object.__setattr__(self, "position_mode", str(self.position_mode))
         object.__setattr__(self, "box_size_mpc_h", _validate_box_size(self.box_size_mpc_h))
 
     def __len__(self) -> int:
@@ -103,6 +105,7 @@ class HaloCatalog:
     velocities_km_s: ArrayLike
     particle_counts: ArrayLike
     box_size_mpc_h: float
+    position_mode: str = "final"
     position_unit: str = "Mpc/h"
     mass_unit: str = "Msun/h"
     velocity_unit: str = "km/s"
@@ -130,6 +133,7 @@ class HaloCatalog:
         object.__setattr__(self, "positions_mpc_h", positions)
         object.__setattr__(self, "velocities_km_s", velocities)
         object.__setattr__(self, "particle_counts", particle_counts)
+        object.__setattr__(self, "position_mode", str(self.position_mode))
         object.__setattr__(self, "box_size_mpc_h", _validate_box_size(self.box_size_mpc_h))
 
     def __len__(self) -> int:
@@ -146,6 +150,7 @@ class HaloCatalog:
             velocities_km_s=self.velocities_km_s,
             weights=weights,
             box_size_mpc_h=self.box_size_mpc_h,
+            position_mode=self.position_mode,
             position_unit=self.position_unit,
             velocity_unit=self.velocity_unit,
             weight_unit=weight_unit,

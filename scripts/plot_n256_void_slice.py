@@ -17,7 +17,9 @@ from numpy.typing import NDArray
 from pinocchio_voids.calibration import mean_halo_spacing_mpc_h
 from pinocchio_voids.geometry import minimum_image_displacement, periodic_distance
 from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
     VIDE_CATALOG_VARIANTS,
+    pinocchio_position_mode_output_suffix,
     read_paired_pinocchio_halo_catalogs,
     read_vide_void_centers,
     read_vide_void_desc,
@@ -197,6 +199,7 @@ class VoidSliceRows:
 
     method: str
     target: str
+    position_mode: str
     positions_mpc_h: NDArray[np.float64]
     radii_mpc_h: NDArray[np.float64]
     void_ids: NDArray[np.int64]
@@ -241,6 +244,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="VIDE catalog variant used for voidDesc, centers, and macrocenters.",
     )
     parser.add_argument("--box-size", type=float, default=256.0)
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument("--rho-bar", type=float, default=8.63025e10)
     linking = parser.add_mutually_exclusive_group()
     linking.add_argument("--linking-length", type=float)
@@ -385,6 +394,7 @@ def _finder_rows(
     return VoidSliceRows(
         method="finder",
         target=target,
+        position_mode=args.position_mode,
         positions_mpc_h=positions[mask],
         radii_mpc_h=radii[mask],
         void_ids=void_ids[mask],
@@ -466,6 +476,7 @@ def _vide_rows(
     return VoidSliceRows(
         method="vide",
         target=target,
+        position_mode=args.position_mode,
         positions_mpc_h=spatial.positions_mpc_h[mask],
         radii_mpc_h=spatial.radii_mpc_h[mask],
         void_ids=spatial.void_ids[mask],
@@ -526,6 +537,7 @@ def write_slice_csv(path: Path, rows: Sequence[VoidSliceRows]) -> None:
             fieldnames=[
                 "method",
                 "target",
+                "position_mode",
                 "void_id",
                 "file_void_id",
                 "x_mpc_h",
@@ -550,6 +562,7 @@ def write_slice_csv(path: Path, rows: Sequence[VoidSliceRows]) -> None:
                     {
                         "method": group.method,
                         "target": group.target,
+                        "position_mode": group.position_mode,
                         "void_id": int(void_id),
                         "file_void_id": "" if int(file_void_id) < 0 else int(file_void_id),
                         "x_mpc_h": float(position[0]),
@@ -706,7 +719,7 @@ def write_slice_plot(
         vide_count = len(rows_by_target[target][1].radii_mpc_h)
         axis.set_title(
             f"Target {target}: {args.slice_axis}-slice {args.slice_center:g} +/- {0.5 * args.slice_thickness:g} Mpc/h\n"
-            f"finder {finder_count}, VIDE {vide_count} ({args.vide_center_kind})"
+            f"finder {finder_count} ({args.position_mode}), VIDE {vide_count} ({args.vide_center_kind})"
         )
         legend_handles = [
             Patch(facecolor="none", edgecolor=colors["finder"], label="finder"),
@@ -722,7 +735,10 @@ def write_slice_plot(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    suffix = vide_catalog_variant_output_suffix(args.vide_variant)
+    suffix = (
+        f"{vide_catalog_variant_output_suffix(args.vide_variant)}"
+        f"{pinocchio_position_mode_output_suffix(args.position_mode)}"
+    )
     if suffix:
         if args.output == DEFAULT_OUTPUT:
             args.output = args.output.with_name(f"{args.output.stem}{suffix}{args.output.suffix}")
@@ -734,6 +750,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.catalog_a,
         args.catalog_b,
         box_size_mpc_h=args.box_size,
+        position_mode=args.position_mode,
     )
     linking_a, linking_b = _resolve_linking_lengths(args, paired)
     config = PairedVoidFinderConfig(

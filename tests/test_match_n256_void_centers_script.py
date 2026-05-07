@@ -2,7 +2,11 @@ import csv
 
 import numpy as np
 
-from scripts.match_n256_void_centers import main, periodic_pairwise_distances
+from scripts.match_n256_void_centers import (
+    _default_output_paths,
+    main,
+    periodic_pairwise_distances,
+)
 
 
 def test_periodic_pairwise_distances_uses_minimum_image() -> None:
@@ -76,10 +80,19 @@ def test_match_void_centers_script_writes_match_and_summary_csv(tmp_path) -> Non
 
     assert len(rows) == 1
     assert rows[0]["target"] == "A"
+    assert rows[0]["position_mode"] == "final"
     assert rows[0]["vide_variant"] == "all"
     assert float(rows[0]["center_distance_mpc_h"]) > 0.0
     assert float(rows[0]["distance_over_min_reff"]) > 0.0
     assert summary_rows[0]["target"] == "A"
+    assert summary_rows[0]["position_mode"] == "final"
     assert summary_rows[0]["vide_variant"] == "all"
     assert summary_rows[0]["finder_count"] == "1"
     assert summary_rows[0]["matched_finder_count"] == "1"
+
+
+def test_default_match_outputs_include_initial_position_suffix() -> None:
+    output_csv, summary_csv = _default_output_paths("center", "untrimmed", "initial")
+
+    assert output_csv.name == "n256_void_center_matches_untrimmed_initial.csv"
+    assert summary_csv.name == "n256_void_center_match_summary_untrimmed_initial.csv"

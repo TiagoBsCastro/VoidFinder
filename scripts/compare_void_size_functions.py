@@ -16,7 +16,11 @@ from numpy.typing import ArrayLike
 
 from pinocchio_voids.calibration import mean_halo_spacing_mpc_h, score_direction_against_vide
 from pinocchio_voids.evaluation import VoidSizeFunctionComparison
-from pinocchio_voids.io import read_paired_pinocchio_halo_catalogs, read_vide_void_desc
+from pinocchio_voids.io import (
+    PINOCCHIO_POSITION_MODES,
+    read_paired_pinocchio_halo_catalogs,
+    read_vide_void_desc,
+)
 from pinocchio_voids.theory import (
     PinocchioCosmologyTable,
     TheoreticalVoidSizeFunction,
@@ -56,6 +60,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("vide_a", type=Path, help="VIDE voidDesc reference for target A.")
     parser.add_argument("vide_b", type=Path, help="VIDE voidDesc reference for target B.")
     parser.add_argument("--box-size", type=float, required=True, help="Periodic box size in Mpc/h.")
+    parser.add_argument(
+        "--position-mode",
+        choices=PINOCCHIO_POSITION_MODES,
+        default="final",
+        help="PINOCCHIO coordinate columns used by the finder.",
+    )
     parser.add_argument(
         "--rho-bar",
         type=float,
@@ -330,6 +340,7 @@ def build_comparisons(args: argparse.Namespace) -> tuple[DirectionComparison, Di
         args.catalog_a,
         args.catalog_b,
         box_size_mpc_h=args.box_size,
+        position_mode=args.position_mode,
     )
     theory_cosmology = _load_theory_cosmology(args)
     link_a, link_b, linking_mode, linking_value = _resolve_linking_lengths(args, paired)
@@ -382,11 +393,13 @@ def _radius_summary_row(
     label: str,
     source: str,
     target: str,
+    position_mode: str,
     radii_mpc_h: Sequence[float],
 ) -> dict[str, object]:
     radii = np.asarray(radii_mpc_h, dtype=np.float64)
     row: dict[str, object] = {
         "label": label,
+        "position_mode": position_mode,
         "source": source,
         "target": target,
         "count": int(radii.size),
@@ -414,6 +427,7 @@ def write_radius_summary_csv(
     path: Path,
     *,
     label: str,
+    position_mode: str,
     comparisons: Sequence[DirectionComparison],
 ) -> None:
     rows: list[dict[str, object]] = []
@@ -423,6 +437,7 @@ def write_radius_summary_csv(
                 label=label,
                 source="finder",
                 target=comparison.target,
+                position_mode=position_mode,
                 radii_mpc_h=comparison.finder_radii_mpc_h,
             )
         )
@@ -431,6 +446,7 @@ def write_radius_summary_csv(
                 label=label,
                 source="vide",
                 target=comparison.target,
+                position_mode=position_mode,
                 radii_mpc_h=comparison.reference_radii_mpc_h,
             )
         )
@@ -444,6 +460,7 @@ def write_radius_summary_csv(
 def _rows_for_size_function(
     *,
     label: str,
+    position_mode: str,
     source: str,
     target: str,
     size_function,
@@ -459,6 +476,7 @@ def _rows_for_size_function(
         rows.append(
             {
                 "label": label,
+                "position_mode": position_mode,
                 "source": source,
                 "target": target,
                 "bin_min_mpc_h": r_min,
@@ -474,6 +492,7 @@ def _rows_for_size_function(
 def _rows_for_theory(
     *,
     label: str,
+    position_mode: str,
     target: str,
     theory: TheoreticalVoidSizeFunction,
 ) -> list[dict[str, object]]:
@@ -487,6 +506,7 @@ def _rows_for_theory(
         rows.append(
             {
                 "label": label,
+                "position_mode": position_mode,
                 "source": theory.model,
                 "target": target,
                 "bin_min_mpc_h": r_min,
@@ -503,6 +523,7 @@ def write_csv(
     path: Path,
     *,
     label: str,
+    position_mode: str,
     comparisons: Sequence[DirectionComparison],
 ) -> None:
     rows: list[dict[str, object]] = []
@@ -510,6 +531,7 @@ def write_csv(
         rows.extend(
             _rows_for_size_function(
                 label=label,
+                position_mode=position_mode,
                 source="finder",
                 target=comparison.target,
                 size_function=comparison.comparison.predicted,
@@ -518,6 +540,7 @@ def write_csv(
         rows.extend(
             _rows_for_size_function(
                 label=label,
+                position_mode=position_mode,
                 source="vide",
                 target=comparison.target,
                 size_function=comparison.comparison.reference,
@@ -527,6 +550,7 @@ def write_csv(
             rows.extend(
                 _rows_for_theory(
                     label=label,
+                    position_mode=position_mode,
                     target=comparison.target,
                     theory=comparison.theory,
                 )
@@ -543,6 +567,7 @@ def write_plot(
     path: Path,
     *,
     label: str,
+    position_mode: str,
     comparisons: Sequence[DirectionComparison],
 ) -> None:
     try:
@@ -572,7 +597,7 @@ def write_plot(
                 size_function.density_dndlnr_per_mpc_h3,
                 where="mid",
                 marker="o",
-                label=f"{label} {source}",
+                label=f"{label} {source} ({position_mode})" if source == "finder" else f"{label} {source}",
             )
         if comparison.theory is not None:
             density = comparison.theory.density_dndlnr_per_mpc_h3
@@ -597,6 +622,7 @@ def write_plot(
 def _print_summary(
     *,
     comparisons: Sequence[DirectionComparison],
+    position_mode: str,
     linking_mode: str,
     linking_value: float,
     link_a: float,
@@ -604,6 +630,7 @@ def _print_summary(
     theory: str | None,
 ) -> None:
     print(
+        f"Position mode: {position_mode}\n"
         f"Linking: {linking_mode}={linking_value:g} "
         f"(source A/B lengths {link_a:g}/{link_b:g} Mpc/h)"
     )
@@ -625,14 +652,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     comparison_a, comparison_b, linking_mode, linking_value, link_a, link_b = build_comparisons(args)
     comparisons = (comparison_a, comparison_b)
 
-    write_csv(args.output_csv, label=args.label, comparisons=comparisons)
+    write_csv(
+        args.output_csv,
+        label=args.label,
+        position_mode=args.position_mode,
+        comparisons=comparisons,
+    )
     if args.summary_csv is not None:
-        write_radius_summary_csv(args.summary_csv, label=args.label, comparisons=comparisons)
+        write_radius_summary_csv(
+            args.summary_csv,
+            label=args.label,
+            position_mode=args.position_mode,
+            comparisons=comparisons,
+        )
     if args.output_plot is not None:
-        write_plot(args.output_plot, label=args.label, comparisons=comparisons)
+        write_plot(
+            args.output_plot,
+            label=args.label,
+            position_mode=args.position_mode,
+            comparisons=comparisons,
+        )
 
     _print_summary(
         comparisons=comparisons,
+        position_mode=args.position_mode,
         linking_mode=linking_mode,
         linking_value=linking_value,
         link_a=link_a,

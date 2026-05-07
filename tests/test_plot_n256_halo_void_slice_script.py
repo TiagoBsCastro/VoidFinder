@@ -167,6 +167,7 @@ def test_halo_void_slice_script_center_selection_writes_diagnostic_csv(tmp_path)
     assert exit_code == 0
     csv_path = tmp_path / "n256_halo_slice_vide.csv"
     text = csv_path.read_text(encoding="utf-8")
+    assert "position_mode" in text
     assert "display_radius_mpc_h" in text
     assert "distance_to_slice_mpc_h" in text
 
@@ -197,6 +198,7 @@ def test_vide_member_positions_for_rows_selects_slab_members(tmp_path) -> None:
     rows = VoidSliceRows(
         method="vide",
         target="A",
+        position_mode="final",
         positions_mpc_h=np.array([[0.0, 0.0, 0.0]]),
         radii_mpc_h=np.array([1.0]),
         void_ids=np.array([0]),
