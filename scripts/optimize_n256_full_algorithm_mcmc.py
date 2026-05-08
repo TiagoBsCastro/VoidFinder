@@ -887,6 +887,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Evaluate the initial center and walkers, write diagnostics, and exit.",
     )
+    parser.add_argument(
+        "--fail-on-rejected-preflight",
+        action="store_true",
+        help="Abort before MCMC when the initial walker preflight has no finite samples.",
+    )
     return parser.parse_args(argv)
 
 
@@ -1003,35 +1008,40 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(format_diagnostic_summary("Initial center diagnostic", center_summary))
     print(format_diagnostic_summary("Initial walker preflight", preflight_summary))
 
-    if args.diagnose_initial_state or preflight_summary["finite"] == 0:
-        diagnostic_positions_path = prefix.with_name(prefix.name + "_preflight_positions.csv")
-        diagnostic_summary_path = prefix.with_name(prefix.name + "_preflight_summary.csv")
-        write_diagnostic_positions_csv(
-            diagnostic_positions_path,
-            labels=("center",)
-            + tuple(f"walker_{index:03d}" for index in range(initial_positions.shape[0])),
-            positions=np.vstack((center.reshape(1, -1), initial_positions)),
-            log_probability=np.concatenate((center_log_prob, preflight_log_prob)),
-            blobs=np.concatenate((center_blobs, preflight_blobs)),
-            position_mode=args.position_mode,
-        )
-        write_diagnostic_summary_csv(
-            diagnostic_summary_path,
-            [
-                {"group": "initial_center", **center_summary},
-                {"group": "initial_walkers", **preflight_summary},
-            ],
-        )
-        print(f"Wrote preflight diagnostics to {diagnostic_positions_path}")
-        print(f"Wrote preflight summary to {diagnostic_summary_path}")
-        if args.diagnose_initial_state:
-            return 0 if preflight_summary["finite"] else 2
+    diagnostic_positions_path = prefix.with_name(prefix.name + "_preflight_positions.csv")
+    diagnostic_summary_path = prefix.with_name(prefix.name + "_preflight_summary.csv")
+    write_diagnostic_positions_csv(
+        diagnostic_positions_path,
+        labels=("center",)
+        + tuple(f"walker_{index:03d}" for index in range(initial_positions.shape[0])),
+        positions=np.vstack((center.reshape(1, -1), initial_positions)),
+        log_probability=np.concatenate((center_log_prob, preflight_log_prob)),
+        blobs=np.concatenate((center_blobs, preflight_blobs)),
+        position_mode=args.position_mode,
+    )
+    write_diagnostic_summary_csv(
+        diagnostic_summary_path,
+        [
+            {"group": "initial_center", **center_summary},
+            {"group": "initial_walkers", **preflight_summary},
+        ],
+    )
+    print(f"Wrote preflight diagnostics to {diagnostic_positions_path}")
+    print(f"Wrote preflight summary to {diagnostic_summary_path}")
+    if args.diagnose_initial_state:
+        return 0 if preflight_summary["finite"] else 2
+    if preflight_summary["finite"] == 0:
+        if args.fail_on_rejected_preflight:
+            print(
+                "No finite initial walkers. Aborting before MCMC because "
+                "--fail-on-rejected-preflight was set."
+            )
+            return 2
         print(
-            "No finite initial walkers. Aborting before MCMC; "
-            "use --allow-degenerate as a diagnostic or adjust the initial-position "
-            "parameter region."
+            "No finite initial walkers. Continuing into MCMC because fail-fast "
+            "preflight is disabled; use --allow-degenerate as a diagnostic or "
+            "adjust the initial-position parameter region if the chain remains rejected."
         )
-        return 2
 
     chain, log_prob, blobs = run_sampler(
         log_probability=log_probability,

@@ -2,6 +2,7 @@ import csv
 
 import numpy as np
 
+import scripts.optimize_n256_full_algorithm_mcmc as full_mcmc
 from scripts.optimize_n256_full_algorithm_mcmc import (
     BLOB_NAMES,
     BLOB_DTYPE,
@@ -65,6 +66,8 @@ def test_full_optimizer_script_writes_mcmc_products(tmp_path) -> None:
     ]
     for path in expected_paths:
         assert path.exists()
+    assert output_prefix.with_name(output_prefix.name + "_preflight_positions.csv").exists()
+    assert output_prefix.with_name(output_prefix.name + "_preflight_summary.csv").exists()
 
     with output_prefix.with_name(output_prefix.name + "_samples.csv").open(
         newline="",
@@ -180,6 +183,110 @@ def test_full_optimizer_diagnose_initial_state_writes_preflight_products(tmp_pat
     assert output_prefix.with_name(output_prefix.name + "_preflight_positions.csv").exists()
     assert output_prefix.with_name(output_prefix.name + "_preflight_summary.csv").exists()
     assert not output_prefix.with_name(output_prefix.name + "_chain.npz").exists()
+
+
+class _AllRejectedPosterior:
+    def __init__(self, **_kwargs) -> None:
+        pass
+
+    def evaluate(self, _theta):
+        return (
+            -np.inf,
+            (
+                0.0,
+                -18.0,
+                -np.inf,
+                -18.0,
+                0.0,
+                np.nan,
+                np.nan,
+                np.nan,
+                np.nan,
+                1.0,
+            ),
+        )
+
+    def __call__(self, theta):
+        value, blob = self.evaluate(theta)
+        return (value, *blob)
+
+
+def test_full_optimizer_fail_fast_preflight_stops_all_rejected_walkers(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    output_prefix = tmp_path / "n256_full_mcmc"
+
+    monkeypatch.setattr(full_mcmc, "N256FullLogPosterior", _AllRejectedPosterior)
+
+    def fail_if_called(**_kwargs):
+        raise AssertionError("run_sampler should not be called")
+
+    monkeypatch.setattr(full_mcmc, "run_sampler", fail_if_called)
+
+    exit_code = full_mcmc.main(
+        [
+            "--walkers",
+            "16",
+            "--steps",
+            "8",
+            "--burn-in",
+            "2",
+            "--thin",
+            "1",
+            "--fail-on-rejected-preflight",
+            "--output-prefix",
+            str(output_prefix),
+        ]
+    )
+
+    assert exit_code == 2
+    assert output_prefix.with_name(output_prefix.name + "_preflight_positions.csv").exists()
+    assert output_prefix.with_name(output_prefix.name + "_preflight_summary.csv").exists()
+    assert not output_prefix.with_name(output_prefix.name + "_chain.npz").exists()
+
+
+def test_full_optimizer_default_runs_after_all_rejected_preflight(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    output_prefix = tmp_path / "n256_full_mcmc"
+    monkeypatch.setattr(full_mcmc, "N256FullLogPosterior", _AllRejectedPosterior)
+    sampler_called = False
+
+    def fake_run_sampler(*, initial_positions, steps, **_kwargs):
+        nonlocal sampler_called
+        sampler_called = True
+        walkers, ndim = initial_positions.shape
+        chain = np.broadcast_to(initial_positions, (steps, walkers, ndim)).copy()
+        log_probability = np.full((steps, walkers), -np.inf)
+        blobs = np.empty((steps, walkers), dtype=BLOB_DTYPE)
+        blobs[...] = _AllRejectedPosterior().evaluate(initial_positions[0])[1]
+        return chain, log_probability, blobs
+
+    monkeypatch.setattr(full_mcmc, "run_sampler", fake_run_sampler)
+
+    exit_code = full_mcmc.main(
+        [
+            "--walkers",
+            "16",
+            "--steps",
+            "8",
+            "--burn-in",
+            "2",
+            "--thin",
+            "1",
+            "--output-prefix",
+            str(output_prefix),
+        ]
+    )
+
+    assert exit_code == 2
+    assert sampler_called
+    assert output_prefix.with_name(output_prefix.name + "_preflight_positions.csv").exists()
+    assert output_prefix.with_name(output_prefix.name + "_chain.npz").exists()
+    assert output_prefix.with_name(output_prefix.name + "_samples.csv").exists()
+    assert output_prefix.with_name(output_prefix.name + "_failure_summary.csv").exists()
 
 
 def test_initial_position_grid_script_writes_void_count_diagnostics(tmp_path) -> None:
