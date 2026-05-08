@@ -13,13 +13,9 @@ authors = [
   { name = "PINOCCHIO Voids contributors" }
 ]
 dependencies = [
-  "emcee",
+  "matplotlib",
   "numpy",
   "scipy",
-  "pydantic",
-  "pyyaml",
-  "typer",
-  "rich",
   "h5py",
 ]
 
@@ -27,9 +23,6 @@ dependencies = [
 dev = [
   "pytest",
 ]
-
-[project.scripts]
-pinvoid = "pinocchio_voids.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

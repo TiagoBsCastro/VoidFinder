@@ -33,13 +33,28 @@ from pinocchio_voids.voidfinder import (
     run_paired_halo_void_finder,
 )
 
-try:
-    from scripts.plot_n256_void_size_function import N256_RUN
-except ModuleNotFoundError as exc:
-    if exc.name != "scripts":
-        raise
-    from plot_n256_void_size_function import N256_RUN
-
+N256_RUN = {
+    "catalog_a": "runs/pinocchio-lowres/n256/pinocchio.0.0000.lowres_n256.catalog.out",
+    "catalog_b": (
+        "runs/pinocchio-lowres/n256_paired/"
+        "pinocchio.0.0000.lowres_n256_paired.catalog.out"
+    ),
+    "vide_a": (
+        "runs/vide-lowres/n256/outputs/pinocchio_n256_ss1.0/"
+        "sample_pinocchio_n256_ss1.0_z0.00_d00/"
+        "voidDesc_all_pinocchio_n256_ss1.0_z0.00_d00.out"
+    ),
+    "vide_b": (
+        "runs/vide-lowres/n256_paired/outputs/pinocchio_n256_paired_ss1.0/"
+        "sample_pinocchio_n256_paired_ss1.0_z0.00_d00/"
+        "voidDesc_all_pinocchio_n256_paired_ss1.0_z0.00_d00.out"
+    ),
+    "cosmology": "runs/pinocchio-lowres/n256/pinocchio.lowres_n256.cosmology.out",
+    "linking_factor": "0.14605092780899798",
+    "radius_a0": "6.14700029037185",
+    "radius_alpha": "0.9313222316465706",
+    "adjacency_factor": "0.5240470713979322",
+}
 
 DEFAULT_VIDE_CENTERS_A = Path(
     "runs/vide-lowres/n256/outputs/pinocchio_n256_ss1.0/"

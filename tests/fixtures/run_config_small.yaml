@@ -1,5 +1,0 @@
-name: fixture-test
-catalog:
-  path: tests/fixtures/pinocchio_catalog_small.out
-  box_size_mpc_h: 256.0
-output_dir: runs/test

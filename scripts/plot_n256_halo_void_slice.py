@@ -81,7 +81,7 @@ except ModuleNotFoundError as exc:
     )
 
 
-DEFAULT_CALIBRATION_SUMMARY = Path("runs/void-statistics/n256_joint_mcmc_summary.csv")
+DEFAULT_CALIBRATION_SUMMARY = Path("runs/void-statistics/n256_reference_parameters.csv")
 DEFAULT_OUTPUT_PREFIX = "n256_halo_slice"
 
 
@@ -119,7 +119,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--calibration-summary",
         type=Path,
         default=DEFAULT_CALIBRATION_SUMMARY,
-        help="Joint MCMC summary CSV used for default finder parameters when present.",
+        help="Optional parameter summary CSV used for finder defaults when present.",
     )
     parser.add_argument("--box-size", type=float, default=256.0)
     parser.add_argument(
@@ -175,7 +175,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
 
 def read_calibration_best_fit(path: Path) -> dict[str, float]:
-    """Read parameter best-fit values from a joint MCMC summary CSV."""
+    """Read parameter best-fit values from a summary CSV."""
 
     if not path.exists():
         return {}

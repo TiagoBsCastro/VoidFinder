@@ -1,7 +1,7 @@
 # PINOCCHIO Catalog Format
 
-Milestone 2 supports one lightweight input format: the ASCII PINOCCHIO halo
-catalog produced as `*.catalog.out`.
+The reference code supports one lightweight input format: the ASCII PINOCCHIO
+halo catalog produced as `*.catalog.out`.
 
 The reader expects header lines beginning with `#`, followed by 12 numeric
 columns:
@@ -15,8 +15,9 @@ columns:
 | 9-11 | velocity x, y, z | km/s |
 | 12 | number of particles | dimensionless |
 
-The current package only reads and validates this catalog layout. It does not
-run PINOCCHIO, does not find voids, and does not optimize parameters.
+The current package reads and validates this catalog layout and can use paired
+halo catalogs in the retained prototype finder. It does not run PINOCCHIO or
+orchestrate production workflows.
 
 For canonical package data objects, final positions are used as the default
 analysis positions. See `docs/scientific_conventions.md` for the unit and

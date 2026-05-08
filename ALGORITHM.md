@@ -4,6 +4,11 @@
 
 This algorithm is a **fast approximate void finder** designed for **paired simulations**. It avoids expensive density-field watershed methods and instead works **directly on halo catalogs**.
 
+Status note: this document records the exploratory algorithm that was tested in
+this repository. It is retained for reference only. The implementation can be
+tuned to reproduce a VIDE-like void size function, but it did not produce
+convincing object-by-object agreement with VIDE void centers.
+
 The central idea is:
 
 - compact overdense halo structures in catalog **A** act as counterparts of underdense regions in simulation **B**;

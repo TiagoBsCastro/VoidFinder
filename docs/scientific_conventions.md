@@ -1,7 +1,7 @@
 # Scientific Conventions
 
-These conventions define the Milestone 2 data contract. They are intentionally
-limited to catalog representation and do not define a void-finding algorithm.
+These conventions define the data contract used by the retained reference
+prototype and diagnostics.
 
 ## Units
 
@@ -13,8 +13,8 @@ limited to catalog representation and do not define a void-finding algorithm.
 ## Coordinates
 
 - The default analysis coordinates are the PINOCCHIO final halo positions.
-- Initial positions remain available in the PINOCCHIO-specific reader but are
-  not used for the canonical halo/tracer positions.
+- Initial positions remain available through the PINOCCHIO reader and paired
+  loader for diagnostics, but final positions are the default reference mode.
 - Periodic boxes are represented by a positive `box_size_mpc_h`.
 - Wrapped positions are mapped into `[0, box_size)`.
 
@@ -22,6 +22,12 @@ limited to catalog representation and do not define a void-finding algorithm.
 
 - `HaloCatalog` stores halo-specific quantities: IDs, masses, final positions,
   velocities, particle counts, box size, and unit metadata.
-- `TracerCatalog` stores point tracers for future void-finding algorithms.
-- Converting halos to tracers does not run a void finder and does not format
-  data for VIDE.
+- `TracerCatalog` stores generic point tracers.
+- Converting halos to tracers does not format data for VIDE.
+
+## Void Radii
+
+- Finder and VIDE size-function diagnostics use
+  `R_eff = (3 V / 4 pi)^(1/3)`.
+- VIDE `voidDesc` radii are corrected from normalized Voronoi volumes using the
+  `sample_info.txt` mean tracer separation.
