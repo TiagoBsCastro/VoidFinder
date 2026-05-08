@@ -237,6 +237,104 @@ def summarize_samples(
     )
 
 
+def evaluate_positions(
+    posterior: "N256FullLogPosterior",
+    positions: NDArray[np.float64],
+) -> tuple[NDArray[np.float64], NDArray]:
+    """Evaluate posterior diagnostics for a batch of parameter vectors."""
+
+    values = np.empty(positions.shape[0], dtype=np.float64)
+    blob_rows = []
+    for index, theta in enumerate(positions):
+        value, blob = posterior.evaluate(theta)
+        values[index] = value
+        blob_rows.append(blob)
+    return values, np.asarray(blob_rows, dtype=BLOB_DTYPE)
+
+
+def _finite_max(values: NDArray[np.float64]) -> float:
+    finite = np.isfinite(values)
+    if not np.any(finite):
+        return float("nan")
+    return float(np.max(values[finite]))
+
+
+def posterior_diagnostic_summary(
+    log_probability: NDArray[np.float64],
+    blobs: NDArray,
+    *,
+    reject_degenerate: bool,
+) -> dict[str, float | int]:
+    """Classify finite and rejected posterior evaluations."""
+
+    log_probability = np.asarray(log_probability, dtype=np.float64)
+    if log_probability.ndim != 1:
+        raise ValueError("log_probability must be one-dimensional")
+    if blobs.shape[0] != log_probability.shape[0]:
+        raise ValueError("blobs must match log_probability length")
+
+    finite = np.isfinite(log_probability)
+    remaining = ~finite
+    log_prior = np.asarray(blobs["log_prior"], dtype=np.float64)
+    weighted_vsf = np.asarray(blobs["weighted_vsf_log_likelihood"], dtype=np.float64)
+    weighted_center = np.asarray(
+        blobs["weighted_center_log_likelihood"],
+        dtype=np.float64,
+    )
+    is_degenerate = np.asarray(blobs["is_degenerate"], dtype=np.float64) > 0.5
+
+    prior_rejected = remaining & ~np.isfinite(log_prior)
+    remaining = remaining & ~prior_rejected
+    degenerate_rejected = remaining & bool(reject_degenerate) & is_degenerate
+    remaining = remaining & ~degenerate_rejected
+    nonfinite_vsf = remaining & ~np.isfinite(weighted_vsf)
+    remaining = remaining & ~nonfinite_vsf
+    nonfinite_center = remaining & ~np.isfinite(weighted_center)
+    remaining = remaining & ~nonfinite_center
+
+    total = int(log_probability.size)
+    finite_count = int(np.count_nonzero(finite))
+    return {
+        "total": total,
+        "finite": finite_count,
+        "nonfinite": total - finite_count,
+        "finite_fraction": float(finite_count / total) if total else float("nan"),
+        "prior_rejected": int(np.count_nonzero(prior_rejected)),
+        "degenerate_rejected": int(np.count_nonzero(degenerate_rejected)),
+        "nonfinite_vsf_likelihood": int(np.count_nonzero(nonfinite_vsf)),
+        "nonfinite_center_likelihood": int(np.count_nonzero(nonfinite_center)),
+        "other_nonfinite": int(np.count_nonzero(remaining)),
+        "best_log_probability": _finite_max(log_probability),
+        "max_vsf_log_likelihood": _finite_max(
+            np.asarray(blobs["vsf_log_likelihood"], dtype=np.float64)
+        ),
+        "max_center_log_likelihood": _finite_max(
+            np.asarray(blobs["center_log_likelihood"], dtype=np.float64)
+        ),
+    }
+
+
+def format_diagnostic_summary(
+    title: str,
+    summary: dict[str, float | int],
+) -> str:
+    """Return a compact human-readable posterior diagnostic summary."""
+
+    return (
+        f"{title}:\n"
+        f"  finite: {summary['finite']} / {summary['total']} "
+        f"({float(summary['finite_fraction']):.3g})\n"
+        f"  prior_rejected: {summary['prior_rejected']}\n"
+        f"  degenerate_rejected: {summary['degenerate_rejected']}\n"
+        f"  nonfinite_vsf_likelihood: {summary['nonfinite_vsf_likelihood']}\n"
+        f"  nonfinite_center_likelihood: {summary['nonfinite_center_likelihood']}\n"
+        f"  other_nonfinite: {summary['other_nonfinite']}\n"
+        f"  best_log_probability: {float(summary['best_log_probability']):.8g}\n"
+        f"  max_vsf_log_likelihood: {float(summary['max_vsf_log_likelihood']):.8g}\n"
+        f"  max_center_log_likelihood: {float(summary['max_center_log_likelihood']):.8g}"
+    )
+
+
 class N256FullLogPosterior:
     """Callable posterior for full scored-merge n256 paired calibration."""
 
@@ -278,10 +376,15 @@ class N256FullLogPosterior:
         self.mean_spacing_a = mean_halo_spacing_mpc_h(self.paired.catalog_a)
         self.mean_spacing_b = mean_halo_spacing_mpc_h(self.paired.catalog_b)
 
-    def evaluate(self, theta: Sequence[float]) -> tuple[float, tuple[float, ...]]:
+    def evaluate_with_score(
+        self,
+        theta: Sequence[float],
+    ) -> tuple[float, tuple[float, ...], object | None]:
+        """Evaluate the posterior and return the calibration score when available."""
+
         prior = log_uniform_prior(theta, self.bounds)
         if not np.isfinite(prior):
-            return -np.inf, _invalid_blob(prior)
+            return -np.inf, _invalid_blob(prior), None
 
         (
             linking_factor,
@@ -355,8 +458,12 @@ class N256FullLogPosterior:
         )
         blob = _blob_from_score(log_prior=prior, score=score)
         if self.settings.reject_degenerate and score.is_degenerate:
-            return -np.inf, blob
-        return prior + score.total_log_likelihood, blob
+            return -np.inf, blob, score
+        return prior + score.total_log_likelihood, blob, score
+
+    def evaluate(self, theta: Sequence[float]) -> tuple[float, tuple[float, ...]]:
+        value, blob, _score = self.evaluate_with_score(theta)
+        return value, blob
 
     def __call__(self, theta: Sequence[float]) -> tuple[float, ...]:
         value, blob = self.evaluate(theta)
@@ -392,6 +499,57 @@ def write_samples_csv(
         writer.writerows(rows)
 
 
+def write_diagnostic_positions_csv(
+    path: Path,
+    *,
+    labels: Sequence[str],
+    positions: NDArray[np.float64],
+    log_probability: NDArray[np.float64],
+    blobs: NDArray,
+    position_mode: str,
+) -> None:
+    """Write per-position posterior diagnostics for preflight and failure cases."""
+
+    rows = []
+    for label, sample, log_prob, blob in zip(
+        labels,
+        positions,
+        log_probability,
+        blobs,
+        strict=True,
+    ):
+        row: dict[str, object] = {
+            "sample": label,
+            "position_mode": position_mode,
+            "log_probability": float(log_prob),
+        }
+        row.update(
+            {name: float(value) for name, value in zip(PARAMETER_NAMES, sample, strict=True)}
+        )
+        row.update({name: float(blob[name]) for name in BLOB_NAMES})
+        rows.append(row)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def write_diagnostic_summary_csv(
+    path: Path,
+    rows: Sequence[dict[str, object]],
+) -> None:
+    """Write compact aggregate diagnostics for rejected-posterior runs."""
+
+    if not rows:
+        raise ValueError("at least one diagnostic row is required")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer.writeheader()
+        writer.writerows(rows)
+
+
 def write_summary_csv(
     path: Path,
     *,
@@ -419,6 +577,59 @@ def write_summary_csv(
         writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def write_chain_npz(
+    path: Path,
+    *,
+    chain: NDArray[np.float64],
+    log_probability: NDArray[np.float64],
+    blobs: NDArray,
+    initial_center: NDArray[np.float64],
+    initial_positions: NDArray[np.float64],
+    preflight_log_probability: NDArray[np.float64],
+    preflight_blobs: NDArray,
+    args: argparse.Namespace,
+    settings: FullMcmcSettings,
+    paths: N256FullMcmcPaths,
+) -> None:
+    """Persist raw MCMC products before any finite-sample summarization."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    np.savez_compressed(
+        path,
+        chain=chain,
+        log_probability=log_probability,
+        blobs=blobs,
+        blob_names=np.asarray(BLOB_NAMES),
+        parameter_names=np.asarray(PARAMETER_NAMES),
+        bounds=DEFAULT_BOUNDS,
+        initial_center=initial_center,
+        initial_positions=initial_positions,
+        preflight_log_probability=preflight_log_probability,
+        preflight_blobs=preflight_blobs,
+        seed=args.seed,
+        burn_in=args.burn_in,
+        thin=args.thin,
+        vsf_weight=args.vsf_weight,
+        center_weight=args.center_weight,
+        center_sigma=args.center_sigma,
+        center_nu=args.center_nu,
+        vide_center_kind=args.vide_center_kind,
+        vide_variant=args.vide_variant,
+        position_mode=args.position_mode,
+        vide_a=str(paths.vide_a),
+        vide_b=str(paths.vide_b),
+        vide_centers_a=str(paths.vide_centers_a),
+        vide_centers_b=str(paths.vide_centers_b),
+        vide_macrocenters_a=str(paths.vide_macrocenters_a),
+        vide_macrocenters_b=str(paths.vide_macrocenters_b),
+        merge_score_mode="weighted",
+        geom_weight=settings.geom_weight,
+        bridge_min_radius_mpc_h=settings.bridge_min_radius_mpc_h,
+        bridge_delta_scale=settings.bridge_delta_scale,
+        bridge_density_mode=settings.bridge_density_mode,
+    )
 
 
 def write_trace_plot(path: Path, chain: NDArray[np.float64]) -> None:
@@ -671,6 +882,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Keep degenerate underprediction samples instead of rejecting them.",
     )
+    parser.add_argument(
+        "--diagnose-initial-state",
+        action="store_true",
+        help="Evaluate the initial center and walkers, write diagnostics, and exit.",
+    )
     return parser.parse_args(argv)
 
 
@@ -715,7 +931,7 @@ def run_sampler(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    if args.steps <= args.burn_in:
+    if not args.diagnose_initial_state and args.steps <= args.burn_in:
         raise SystemExit("--steps must be larger than --burn-in")
     suffix = (
         f"{vide_catalog_variant_output_suffix(args.vide_variant)}"
@@ -764,6 +980,59 @@ def main(argv: Sequence[str] | None = None) -> int:
         settings=settings,
         bounds=DEFAULT_BOUNDS,
     )
+    prefix = args.output_prefix
+    prefix.parent.mkdir(parents=True, exist_ok=True)
+    center_log_prob, center_blobs = evaluate_positions(
+        log_probability,
+        center.reshape(1, -1),
+    )
+    preflight_log_prob, preflight_blobs = evaluate_positions(
+        log_probability,
+        initial_positions,
+    )
+    center_summary = posterior_diagnostic_summary(
+        center_log_prob,
+        center_blobs,
+        reject_degenerate=settings.reject_degenerate,
+    )
+    preflight_summary = posterior_diagnostic_summary(
+        preflight_log_prob,
+        preflight_blobs,
+        reject_degenerate=settings.reject_degenerate,
+    )
+    print(format_diagnostic_summary("Initial center diagnostic", center_summary))
+    print(format_diagnostic_summary("Initial walker preflight", preflight_summary))
+
+    if args.diagnose_initial_state or preflight_summary["finite"] == 0:
+        diagnostic_positions_path = prefix.with_name(prefix.name + "_preflight_positions.csv")
+        diagnostic_summary_path = prefix.with_name(prefix.name + "_preflight_summary.csv")
+        write_diagnostic_positions_csv(
+            diagnostic_positions_path,
+            labels=("center",)
+            + tuple(f"walker_{index:03d}" for index in range(initial_positions.shape[0])),
+            positions=np.vstack((center.reshape(1, -1), initial_positions)),
+            log_probability=np.concatenate((center_log_prob, preflight_log_prob)),
+            blobs=np.concatenate((center_blobs, preflight_blobs)),
+            position_mode=args.position_mode,
+        )
+        write_diagnostic_summary_csv(
+            diagnostic_summary_path,
+            [
+                {"group": "initial_center", **center_summary},
+                {"group": "initial_walkers", **preflight_summary},
+            ],
+        )
+        print(f"Wrote preflight diagnostics to {diagnostic_positions_path}")
+        print(f"Wrote preflight summary to {diagnostic_summary_path}")
+        if args.diagnose_initial_state:
+            return 0 if preflight_summary["finite"] else 2
+        print(
+            "No finite initial walkers. Aborting before MCMC; "
+            "use --allow-degenerate as a diagnostic or adjust the initial-position "
+            "parameter region."
+        )
+        return 2
+
     chain, log_prob, blobs = run_sampler(
         log_probability=log_probability,
         initial_positions=initial_positions,
@@ -777,44 +1046,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         thin=args.thin,
     )
     sample_blobs = flatten_blobs(blobs, burn_in=args.burn_in, thin=args.thin)
-    best_fit, best_log_probability, percentiles = summarize_samples(samples, sample_log_prob)
-    finite = np.isfinite(sample_log_prob)
-    best_index = int(np.argmax(sample_log_prob[finite]))
-    best_blob = sample_blobs[finite][best_index]
-
-    prefix = args.output_prefix
-    prefix.parent.mkdir(parents=True, exist_ok=True)
-    np.savez_compressed(
+    write_chain_npz(
         prefix.with_name(prefix.name + "_chain.npz"),
         chain=chain,
         log_probability=log_prob,
         blobs=blobs,
-        blob_names=np.asarray(BLOB_NAMES),
-        parameter_names=np.asarray(PARAMETER_NAMES),
-        bounds=DEFAULT_BOUNDS,
         initial_center=center,
         initial_positions=initial_positions,
-        seed=args.seed,
-        burn_in=args.burn_in,
-        thin=args.thin,
-        vsf_weight=args.vsf_weight,
-        center_weight=args.center_weight,
-        center_sigma=args.center_sigma,
-        center_nu=args.center_nu,
-        vide_center_kind=args.vide_center_kind,
-        vide_variant=args.vide_variant,
-        position_mode=args.position_mode,
-        vide_a=str(paths.vide_a),
-        vide_b=str(paths.vide_b),
-        vide_centers_a=str(paths.vide_centers_a),
-        vide_centers_b=str(paths.vide_centers_b),
-        vide_macrocenters_a=str(paths.vide_macrocenters_a),
-        vide_macrocenters_b=str(paths.vide_macrocenters_b),
-        merge_score_mode="weighted",
-        geom_weight=settings.geom_weight,
-        bridge_min_radius_mpc_h=settings.bridge_min_radius_mpc_h,
-        bridge_delta_scale=settings.bridge_delta_scale,
-        bridge_density_mode=settings.bridge_density_mode,
+        preflight_log_probability=preflight_log_prob,
+        preflight_blobs=preflight_blobs,
+        args=args,
+        settings=settings,
+        paths=paths,
     )
     write_samples_csv(
         prefix.with_name(prefix.name + "_samples.csv"),
@@ -823,6 +1066,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         sample_blobs,
         position_mode=args.position_mode,
     )
+    sample_summary = posterior_diagnostic_summary(
+        sample_log_prob,
+        sample_blobs,
+        reject_degenerate=settings.reject_degenerate,
+    )
+    if sample_summary["finite"] == 0:
+        failure_summary_path = prefix.with_name(prefix.name + "_failure_summary.csv")
+        write_diagnostic_summary_csv(
+            failure_summary_path,
+            [{"group": "post_burn_in_samples", **sample_summary}],
+        )
+        print(format_diagnostic_summary("Post-burn-in sample diagnostic", sample_summary))
+        print(f"Wrote raw chain to {prefix.with_name(prefix.name + '_chain.npz')}")
+        print(f"Wrote rejected samples to {prefix.with_name(prefix.name + '_samples.csv')}")
+        print(f"Wrote failure summary to {failure_summary_path}")
+        return 2
+
+    best_fit, best_log_probability, percentiles = summarize_samples(samples, sample_log_prob)
+    finite = np.isfinite(sample_log_prob)
+    best_index = int(np.argmax(sample_log_prob[finite]))
+    best_blob = sample_blobs[finite][best_index]
+
     write_summary_csv(
         prefix.with_name(prefix.name + "_summary.csv"),
         best_fit=best_fit,

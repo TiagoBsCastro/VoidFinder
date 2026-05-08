@@ -88,6 +88,11 @@ Completed so far:
   audit workflows.
 - Updated generated MCMC best-fit commands and chain metadata so the chosen
   resolved VIDE target is preserved.
+- Added full-MCMC preflight diagnostics so all-rejected initial walkers fail
+  before a long `emcee` run, with rejected-sample summaries preserved on disk.
+- Added `scripts/diagnose_n256_initial_position_grid.py` to sweep the
+  parameters most likely to create degenerate initial-position outputs before
+  launching a full initial-space calibration.
 - Removed deprecated grid-search calibration scripts in favor of MCMC-only
   calibration workflows.
 - Removed deprecated one-off theory-debug and generic VIDE-only VSF plotting
@@ -234,9 +239,11 @@ Use the named Miniforge environment:
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_vsf_mcmc.py --help
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_joint_calibration_mcmc.py --help
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_full_algorithm_mcmc.py --help
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/diagnose_n256_initial_position_grid.py --help
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_vsf_mcmc.py --vide-variant untrimmed --walkers 8 --steps 8 --burn-in 2 --thin 1 --allow-degenerate --output-prefix /tmp/n256_vsf_mcmc_untrimmed_smoke
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_joint_calibration_mcmc.py --vide-variant trimmed_nodencut --walkers 8 --steps 8 --burn-in 2 --thin 1 --center-weight 0 --allow-degenerate --output-prefix /tmp/n256_joint_mcmc_trimmed_nodencut_smoke
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_full_algorithm_mcmc.py --vide-variant untrimmed --walkers 16 --steps 8 --burn-in 2 --thin 1 --center-weight 0 --allow-degenerate --output-prefix /tmp/n256_full_mcmc_untrimmed_smoke
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_full_algorithm_mcmc.py --vide-variant untrimmed --position-mode initial --walkers 16 --center-weight 0 --allow-degenerate --diagnose-initial-state --output-prefix /tmp/n256_full_mcmc_initial_preflight
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n256_void_size_function.py --paper-bins
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n256_void_size_function.py --vide-variant untrimmed --paper-bins
 /home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/plot_n256_void_slice.py --slice-axis z --slice-center 128 --slice-thickness 20 --target both

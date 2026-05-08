@@ -184,6 +184,33 @@ This samples `linking_factor`, `radius_a0`, `radius_alpha`,
 The generated best-fit command refreshes the VSF comparison, center-match CSV,
 and halo-slice diagnostics with the full scored-merge parameters.
 
+Before starting a long initial-position calibration, run the preflight
+diagnostic. It evaluates the initial center and walkers once, writes
+`*_preflight_positions.csv` and `*_preflight_summary.csv`, and exits before
+`emcee` if all walkers are rejected:
+
+```bash
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/optimize_n256_full_algorithm_mcmc.py \
+  --vide-variant untrimmed \
+  --position-mode initial \
+  --diagnose-initial-state
+```
+
+If the preflight is all rejected, use the coarse grid diagnostic to find a
+non-degenerate initial-position region before launching the full chain:
+
+```bash
+/home/tcastro/miniforge3/envs/voidfinder/bin/python scripts/diagnose_n256_initial_position_grid.py \
+  --vide-variant untrimmed \
+  --position-mode initial
+```
+
+`--allow-degenerate` is useful for confirming whether degenerate VSF rejection
+is the blocker, but it should be treated as a diagnostic switch unless the
+degeneracy criterion is intentionally changed.
+Run `untrimmed` and `all` as separate commands until the preflight passes; an
+all-rejected preflight exits nonzero before the expensive chain starts.
+
 By default, calibration uses the conservative VIDE `voidDesc_all` outputs
 (`--vide-variant all`). To test whether our finder better reproduces
 no-density-cut VIDE catalogs, switch the reference variant directly:
